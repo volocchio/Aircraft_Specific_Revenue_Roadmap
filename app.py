@@ -139,16 +139,23 @@ with st.sidebar:
             min_value=0.5, max_value=3.0, value=1.0, step=0.1, format="%.1f%%"
         )
         lease_usd_per_month = hull_value_usd * (lease_rate_pct / 100.0)
-        st.caption(f"Monthly lease: **${lease_usd_per_month:,.0f}**/mo")
         acquisition_cost_usd = lease_usd_per_month * float(acquisition_months)
         resale_value_usd = 0.0
+        st.caption(
+            f"Monthly lease: **${lease_usd_per_month:,.0f}**/mo  ·  "
+            f"Total acquisition cost: **${acquisition_cost_usd:,.0f}**"
+        )
     else:
         purchase_price_usd = st.number_input(
             "Purchase price (USD)", min_value=0.0, value=hull_value_default, step=250000.0, format="%.0f"
         )
-        resale_fraction = st.slider("Resale fraction", min_value=0.0, max_value=1.0, value=0.9)
+        resale_fraction = st.slider("Resale fraction", min_value=0.0, max_value=1.0, value=0.9, format="%.2f")
         resale_value_usd = float(purchase_price_usd) * float(resale_fraction)
         acquisition_cost_usd = float(purchase_price_usd) - float(resale_value_usd)
+        st.caption(
+            f"Resale value: **${resale_value_usd:,.0f}**  ·  "
+            f"Net acquisition cost: **${acquisition_cost_usd:,.0f}**"
+        )
 
     st.subheader("Readiness & inventory")
     tooling_usd = st.number_input("Tooling (USD)", min_value=0.0, value=750000.0, step=50000.0, format="%.0f")
@@ -224,7 +231,21 @@ with st.sidebar:
 
     st.subheader("Schedule")
     schedule_months = st.number_input(
-        "Estimated schedule (months)", min_value=0.0, value=24.0, step=1.0
+        "Estimated schedule (months)", min_value=1.0, value=24.0, step=1.0, format="%.0f"
+    )
+    _current_year = pd.Timestamp.now().year
+    program_start_year = st.number_input(
+        "Program start year", min_value=2020, max_value=2040, value=_current_year, step=1, format="%d"
+    )
+    program_start_quarter = st.selectbox(
+        "Program start quarter", options=["Q1", "Q2", "Q3", "Q4"], index=0
+    )
+    _q_month = {"Q1": 1, "Q2": 4, "Q3": 7, "Q4": 10}[program_start_quarter]
+    program_start_date = pd.Timestamp(year=int(program_start_year), month=_q_month, day=1)
+    program_end_date = program_start_date + pd.DateOffset(months=int(schedule_months))
+    st.caption(
+        f"Program: **{program_start_date.strftime('%b %Y')}** → **{program_end_date.strftime('%b %Y')}** "
+        f"({int(schedule_months)} mo)"
     )
 
 cal_df = load_calibration("data/nre_calibration.csv")
@@ -349,39 +370,52 @@ with col2:
 tab_results.caption("Calibration points and aircraft list can be edited in the data/ folder.")
 
 with tab_schedule:
-    st.subheader("STC Program Schedule (Strawman)")
+    st.subheader(
+        f"STC Program Schedule — {program_start_date.strftime('%b %Y')} to {program_end_date.strftime('%b %Y')}"
+    )
+
+    # Strawman proportions expressed as fractions of a 666-day (22-month) baseline
+    _BASELINE_DAYS = 666.0
+    _scale = (float(schedule_months) * 30.44) / _BASELINE_DAYS
+
+    def _sd(d: int) -> int:
+        return max(0, round(d * _scale))
+
+    def _dur(d: int) -> int:
+        return max(1, round(d * _scale))
 
     _gantt_data = [
-        {"Phase": "Design Effort", "Task": "Design", "Start_day": 0, "Duration_days": 200},
-        {"Phase": "Design Effort", "Task": "Proof of Concept / Prototype", "Start_day": 30, "Duration_days": 90},
-        {"Phase": "Design Effort", "Task": "Prototype Flight Test", "Start_day": 120, "Duration_days": 20},
-        {"Phase": "Design Effort", "Task": "MDL", "Start_day": 60, "Duration_days": 150},
-        {"Phase": "Design Effort", "Task": "Tooling", "Start_day": 210, "Duration_days": 100},
-        {"Phase": "Design Effort", "Task": "Production", "Start_day": 310, "Duration_days": 1},
-        {"Phase": "FAA Certification", "Task": "Cert Plans & Cert Basis", "Start_day": 120, "Duration_days": 30},
-        {"Phase": "FAA Certification", "Task": "1309 Compliance", "Start_day": 150, "Duration_days": 130},
-        {"Phase": "FAA Certification", "Task": "Prepare Test Plans", "Start_day": 120, "Duration_days": 120},
-        {"Phase": "FAA Certification", "Task": "Baseline Characteristics Testing", "Start_day": 240, "Duration_days": 45},
-        {"Phase": "FAA Certification", "Task": "Baseline Performance Testing", "Start_day": 285, "Duration_days": 60},
-        {"Phase": "FAA Certification", "Task": "Qualification Testing", "Start_day": 210, "Duration_days": 180},
-        {"Phase": "FAA Certification", "Task": "Modified GT & Reporting", "Start_day": 390, "Duration_days": 60},
-        {"Phase": "FAA Certification", "Task": "Flutter Analysis", "Start_day": 390, "Duration_days": 150},
-        {"Phase": "FAA Certification", "Task": "Envelope Expansion", "Start_day": 450, "Duration_days": 10},
-        {"Phase": "FAA Certification", "Task": "Loads Flight Tests & Reporting", "Start_day": 460, "Duration_days": 60},
-        {"Phase": "FAA Certification", "Task": "Loads Reports", "Start_day": 490, "Duration_days": 30},
-        {"Phase": "FAA Certification", "Task": "Modified Flight Tests & Reporting", "Start_day": 460, "Duration_days": 90},
-        {"Phase": "FAA Certification", "Task": "Ice Flights & Reporting", "Start_day": 490, "Duration_days": 90},
-        {"Phase": "FAA Certification", "Task": "Modified Performance Testing", "Start_day": 520, "Duration_days": 90},
-        {"Phase": "FAA Certification", "Task": "Stress Reports", "Start_day": 490, "Duration_days": 200},
-        {"Phase": "FAA Certification", "Task": "Damage Tolerance Reports", "Start_day": 490, "Duration_days": 200},
-        {"Phase": "FAA Certification", "Task": "Structural Testing", "Start_day": 490, "Duration_days": 130},
-        {"Phase": "FAA Certification", "Task": "STC Issuance", "Start_day": 665, "Duration_days": 1},
+        {"Phase": "Design Effort", "Task": "Design", "Start_day": _sd(0), "Duration_days": _dur(200)},
+        {"Phase": "Design Effort", "Task": "Proof of Concept / Prototype", "Start_day": _sd(30), "Duration_days": _dur(90)},
+        {"Phase": "Design Effort", "Task": "Prototype Flight Test", "Start_day": _sd(120), "Duration_days": _dur(20)},
+        {"Phase": "Design Effort", "Task": "MDL", "Start_day": _sd(60), "Duration_days": _dur(150)},
+        {"Phase": "Design Effort", "Task": "Tooling", "Start_day": _sd(210), "Duration_days": _dur(100)},
+        {"Phase": "Design Effort", "Task": "Production", "Start_day": _sd(310), "Duration_days": _dur(1)},
+        {"Phase": "FAA Certification", "Task": "Cert Plans & Cert Basis", "Start_day": _sd(120), "Duration_days": _dur(30)},
+        {"Phase": "FAA Certification", "Task": "1309 Compliance", "Start_day": _sd(150), "Duration_days": _dur(130)},
+        {"Phase": "FAA Certification", "Task": "Prepare Test Plans", "Start_day": _sd(120), "Duration_days": _dur(120)},
+        {"Phase": "FAA Certification", "Task": "Baseline Characteristics Testing", "Start_day": _sd(240), "Duration_days": _dur(45)},
+        {"Phase": "FAA Certification", "Task": "Baseline Performance Testing", "Start_day": _sd(285), "Duration_days": _dur(60)},
+        {"Phase": "FAA Certification", "Task": "Qualification Testing", "Start_day": _sd(210), "Duration_days": _dur(180)},
+        {"Phase": "FAA Certification", "Task": "Modified GT & Reporting", "Start_day": _sd(390), "Duration_days": _dur(60)},
+        {"Phase": "FAA Certification", "Task": "Flutter Analysis", "Start_day": _sd(390), "Duration_days": _dur(150)},
+        {"Phase": "FAA Certification", "Task": "Envelope Expansion", "Start_day": _sd(450), "Duration_days": _dur(10)},
+        {"Phase": "FAA Certification", "Task": "Loads Flight Tests & Reporting", "Start_day": _sd(460), "Duration_days": _dur(60)},
+        {"Phase": "FAA Certification", "Task": "Loads Reports", "Start_day": _sd(490), "Duration_days": _dur(30)},
+        {"Phase": "FAA Certification", "Task": "Modified Flight Tests & Reporting", "Start_day": _sd(460), "Duration_days": _dur(90)},
+        {"Phase": "FAA Certification", "Task": "Ice Flights & Reporting", "Start_day": _sd(490), "Duration_days": _dur(90)},
+        {"Phase": "FAA Certification", "Task": "Modified Performance Testing", "Start_day": _sd(520), "Duration_days": _dur(90)},
+        {"Phase": "FAA Certification", "Task": "Stress Reports", "Start_day": _sd(490), "Duration_days": _dur(200)},
+        {"Phase": "FAA Certification", "Task": "Damage Tolerance Reports", "Start_day": _sd(490), "Duration_days": _dur(200)},
+        {"Phase": "FAA Certification", "Task": "Structural Testing", "Start_day": _sd(490), "Duration_days": _dur(130)},
+        {"Phase": "FAA Certification", "Task": "STC Issuance", "Start_day": _sd(665), "Duration_days": _dur(1)},
     ]
 
     gantt_df = pd.DataFrame(_gantt_data)
-    program_start = pd.Timestamp("2025-01-01")
-    gantt_df["Start"] = program_start + pd.to_timedelta(gantt_df["Start_day"], unit="D")
+    gantt_df["Start"] = program_start_date + pd.to_timedelta(gantt_df["Start_day"], unit="D")
     gantt_df["Finish"] = gantt_df["Start"] + pd.to_timedelta(gantt_df["Duration_days"], unit="D")
+    gantt_df["Start_label"] = gantt_df["Start"].dt.strftime("%b %Y")
+    gantt_df["Finish_label"] = gantt_df["Finish"].dt.strftime("%b %Y")
 
     gantt_chart = (
         alt.Chart(gantt_df)
@@ -391,9 +425,18 @@ with tab_schedule:
             x2=alt.X2("Finish:T"),
             y=alt.Y("Task:N", sort=None, title=""),
             color=alt.Color("Phase:N", legend=alt.Legend(title="Phase")),
-            tooltip=["Task:N", "Phase:N", "Start:T", "Finish:T", "Duration_days:Q"],
+            tooltip=[
+                alt.Tooltip("Task:N", title="Task"),
+                alt.Tooltip("Phase:N", title="Phase"),
+                alt.Tooltip("Start_label:N", title="Start"),
+                alt.Tooltip("Finish_label:N", title="Finish"),
+                alt.Tooltip("Duration_days:Q", title="Duration (days)"),
+            ],
         )
-        .properties(height=550)
+        .properties(height=580)
     )
     st.altair_chart(gantt_chart.interactive(), use_container_width=True)
-    st.caption("Strawman schedule based on A320 STC program template. Start date assumes Jan 1 2025.")
+    st.caption(
+        f"Schedule scaled to **{int(schedule_months)} months** starting **{program_start_quarter} {int(program_start_year)}**. "
+        "Proportions based on A320 STC strawman."
+    )
