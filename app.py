@@ -31,6 +31,8 @@ def load_aircraft(path: str) -> pd.DataFrame:
         df["fuel_burn_gph"] = pd.to_numeric(df["fuel_burn_gph"], errors="coerce")
     if "fleet_size" in df.columns:
         df["fleet_size"] = pd.to_numeric(df["fleet_size"], errors="coerce").fillna(0).astype(int)
+    if "hull_value_usd" in df.columns:
+        df["hull_value_usd"] = pd.to_numeric(df["hull_value_usd"], errors="coerce")
     return df
 
 
@@ -73,9 +75,11 @@ with st.sidebar:
         _ac_row = aircraft_df.loc[aircraft_df["aircraft"] == selected_aircraft]
         mtow_default = float(_ac_row["mtow_lbs"].iloc[0])
         fleet_size_default = int(_ac_row["fleet_size"].iloc[0]) if "fleet_size" in _ac_row.columns else 0
+        hull_value_default = float(_ac_row["hull_value_usd"].iloc[0]) if "hull_value_usd" in _ac_row.columns and not _ac_row["hull_value_usd"].isna().all() else 5000000.0
     else:
         mtow_default = 10400.0
         fleet_size_default = 0
+        hull_value_default = 5000000.0
 
     mtow_lbs = st.number_input(
         "MTOW (lbs)", min_value=1.0, value=float(mtow_default), step=100.0, format="%.0f"
@@ -85,30 +89,37 @@ with st.sidebar:
     acquisition_mode = st.selectbox("Mode", options=["Lease", "Purchase"], index=0)
 
     acquisition_months = st.number_input(
-        "Months held (including STC program)", min_value=0, value=18, step=1
+        "Months held (including STC program)", min_value=0, value=24, step=1
     )
 
     if acquisition_mode == "Lease":
-        lease_usd_per_month = st.number_input(
-            "Lease cost (USD/month)", min_value=0.0, value=75000.0, step=5000.0
+        hull_value_usd = st.number_input(
+            "Hull value (USD)", min_value=0.0, value=hull_value_default, step=250000.0, format="%.0f"
         )
-        acquisition_cost_usd = float(lease_usd_per_month) * float(acquisition_months)
+        lease_rate_pct = st.slider(
+            "Lease rate (% of hull/month)",
+            min_value=0.5, max_value=3.0, value=1.0, step=0.1, format="%.1f%%"
+        )
+        lease_usd_per_month = hull_value_usd * (lease_rate_pct / 100.0)
+        st.caption(f"Monthly lease: **${lease_usd_per_month:,.0f}**/mo")
+        acquisition_cost_usd = lease_usd_per_month * float(acquisition_months)
         resale_value_usd = 0.0
     else:
         purchase_price_usd = st.number_input(
-            "Purchase price (USD)", min_value=0.0, value=6000000.0, step=250000.0
+            "Purchase price (USD)", min_value=0.0, value=hull_value_default, step=250000.0, format="%.0f"
         )
         resale_fraction = st.slider("Resale fraction", min_value=0.0, max_value=1.0, value=0.9)
         resale_value_usd = float(purchase_price_usd) * float(resale_fraction)
         acquisition_cost_usd = float(purchase_price_usd) - float(resale_value_usd)
 
     st.subheader("Readiness & inventory")
-    tooling_usd = st.number_input("Tooling (USD)", min_value=0.0, value=750000.0, step=50000.0)
+    tooling_usd = st.number_input("Tooling (USD)", min_value=0.0, value=750000.0, step=50000.0, format="%.0f")
     inventory_usd = st.number_input(
         "Required inventory to start installs (USD)",
         min_value=0.0,
         value=1500000.0,
         step=50000.0,
+        format="%.0f",
     )
     prod_readiness_pct = st.slider(
         "Production readiness (% of cert NRE)",
@@ -128,21 +139,21 @@ with st.sidebar:
         fuel_burn_default = 150.0
 
     baseline_hrs = st.number_input(
-        "Baseline flight test hours", min_value=0.0, value=50.0, step=5.0
+        "Baseline flight test hours", min_value=0.0, value=50.0, step=5.0, format="%.0f"
     )
     cert_hrs = st.number_input(
-        "Certification flight test hours", min_value=0.0, value=100.0, step=5.0
+        "Certification flight test hours", min_value=0.0, value=100.0, step=5.0, format="%.0f"
     )
     total_flight_test_hrs = baseline_hrs + cert_hrs
 
     fuel_burn_gph = st.number_input(
-        "Fuel burn (gal/hr)", min_value=0.0, value=fuel_burn_default, step=10.0
+        "Fuel burn (gal/hr)", min_value=0.0, value=fuel_burn_default, step=10.0, format="%.0f"
     )
     fuel_price_per_gal = st.number_input(
         "Fuel price (USD/gal)", min_value=0.0, value=6.50, step=0.25, format="%.2f"
     )
     crew_cost_per_hr = st.number_input(
-        "Crew cost (USD/hr)", min_value=0.0, value=1500.0, step=100.0
+        "Crew cost (USD/hr)", min_value=0.0, value=1500.0, step=100.0, format="%.0f"
     )
 
     flight_test_fuel_usd = total_flight_test_hrs * fuel_burn_gph * fuel_price_per_gal
@@ -162,7 +173,7 @@ with st.sidebar:
         step=10,
     )
     kit_price_usd = st.number_input(
-        "Kit price (USD)", min_value=0.0, value=500000.0, step=25000.0
+        "Kit price (USD)", min_value=0.0, value=500000.0, step=25000.0, format="%.0f"
     )
     market_penetration_pct = st.slider(
         "Expected market penetration",
@@ -194,11 +205,11 @@ tam_usd = float(fleet_size) * float(kit_price_usd)
 addressable_revenue_usd = tam_usd * (float(market_penetration_pct) / 100.0)
 roi_multiple = addressable_revenue_usd / all_in_cost_usd if all_in_cost_usd > 0 else 0.0
 
-col1, col2 = st.columns([1.2, 1])
+tab_results, tab_schedule = st.tabs(["Results", "Schedule"])
+
+col1, col2 = tab_results.columns([1.2, 1])
 
 with col1:
-    st.subheader("Results")
-
     st.subheader("Market Opportunity")
     mkt_col1, mkt_col2, mkt_col3 = st.columns(3)
     mkt_col1.metric("Fleet size", f"{int(fleet_size):,}")
@@ -254,9 +265,13 @@ with col1:
     )
 
 with col2:
-    st.subheader("MTOW vs Total NRE (Power-law fit)")
+    st.subheader("MTOW vs Total NRE (log-log)")
 
-    x_grid = np.linspace(cal_df["mtow_lbs"].min() * 0.8, cal_df["mtow_lbs"].max() * 1.1, 200)
+    x_grid = np.logspace(
+        np.log10(cal_df["mtow_lbs"].min() * 0.8),
+        np.log10(cal_df["mtow_lbs"].max() * 1.1),
+        200,
+    )
     y_grid = np.array([predict_power_law(float(x), a, b) for x in x_grid])
 
     fit_df = pd.DataFrame({"mtow_lbs": x_grid, "total_nre_usd_m": y_grid, "series": "fit"})
@@ -274,15 +289,18 @@ with col2:
     line = (
         alt.Chart(plot_df[plot_df["series"] == "fit"])
         .mark_line()
-        .encode(x=alt.X("mtow_lbs:Q", title="MTOW (lbs)"), y=alt.Y("total_nre_usd_m:Q", title="Total NRE (USD M)"))
+        .encode(
+            x=alt.X("mtow_lbs:Q", title="MTOW (lbs)", scale=alt.Scale(type="log")),
+            y=alt.Y("total_nre_usd_m:Q", title="Total NRE (USD M)", scale=alt.Scale(type="log")),
+        )
     )
 
     points = (
         alt.Chart(plot_df[plot_df["series"] != "fit"])
         .mark_point(filled=True, size=120)
         .encode(
-            x="mtow_lbs:Q",
-            y="total_nre_usd_m:Q",
+            x=alt.X("mtow_lbs:Q", scale=alt.Scale(type="log")),
+            y=alt.Y("total_nre_usd_m:Q", scale=alt.Scale(type="log")),
             color=alt.Color("series:N", legend=alt.Legend(title="")),
             tooltip=["series:N", "mtow_lbs:Q", "total_nre_usd_m:Q"],
         )
@@ -290,4 +308,54 @@ with col2:
 
     st.altair_chart((line + points).interactive(), use_container_width=True)
 
-st.caption("Calibration points and aircraft list can be edited in the data/ folder.")
+tab_results.caption("Calibration points and aircraft list can be edited in the data/ folder.")
+
+with tab_schedule:
+    st.subheader("STC Program Schedule (Strawman)")
+
+    _gantt_data = [
+        {"Phase": "Design Effort", "Task": "Design", "Start_day": 0, "Duration_days": 200},
+        {"Phase": "Design Effort", "Task": "Proof of Concept / Prototype", "Start_day": 30, "Duration_days": 90},
+        {"Phase": "Design Effort", "Task": "Prototype Flight Test", "Start_day": 120, "Duration_days": 20},
+        {"Phase": "Design Effort", "Task": "MDL", "Start_day": 60, "Duration_days": 150},
+        {"Phase": "Design Effort", "Task": "Tooling", "Start_day": 210, "Duration_days": 100},
+        {"Phase": "Design Effort", "Task": "Production", "Start_day": 310, "Duration_days": 1},
+        {"Phase": "FAA Certification", "Task": "Cert Plans & Cert Basis", "Start_day": 120, "Duration_days": 30},
+        {"Phase": "FAA Certification", "Task": "1309 Compliance", "Start_day": 150, "Duration_days": 130},
+        {"Phase": "FAA Certification", "Task": "Prepare Test Plans", "Start_day": 120, "Duration_days": 120},
+        {"Phase": "FAA Certification", "Task": "Baseline Characteristics Testing", "Start_day": 240, "Duration_days": 45},
+        {"Phase": "FAA Certification", "Task": "Baseline Performance Testing", "Start_day": 285, "Duration_days": 60},
+        {"Phase": "FAA Certification", "Task": "Qualification Testing", "Start_day": 210, "Duration_days": 180},
+        {"Phase": "FAA Certification", "Task": "Modified GT & Reporting", "Start_day": 390, "Duration_days": 60},
+        {"Phase": "FAA Certification", "Task": "Flutter Analysis", "Start_day": 390, "Duration_days": 150},
+        {"Phase": "FAA Certification", "Task": "Envelope Expansion", "Start_day": 450, "Duration_days": 10},
+        {"Phase": "FAA Certification", "Task": "Loads Flight Tests & Reporting", "Start_day": 460, "Duration_days": 60},
+        {"Phase": "FAA Certification", "Task": "Loads Reports", "Start_day": 490, "Duration_days": 30},
+        {"Phase": "FAA Certification", "Task": "Modified Flight Tests & Reporting", "Start_day": 460, "Duration_days": 90},
+        {"Phase": "FAA Certification", "Task": "Ice Flights & Reporting", "Start_day": 490, "Duration_days": 90},
+        {"Phase": "FAA Certification", "Task": "Modified Performance Testing", "Start_day": 520, "Duration_days": 90},
+        {"Phase": "FAA Certification", "Task": "Stress Reports", "Start_day": 490, "Duration_days": 200},
+        {"Phase": "FAA Certification", "Task": "Damage Tolerance Reports", "Start_day": 490, "Duration_days": 200},
+        {"Phase": "FAA Certification", "Task": "Structural Testing", "Start_day": 490, "Duration_days": 130},
+        {"Phase": "FAA Certification", "Task": "STC Issuance", "Start_day": 665, "Duration_days": 1},
+    ]
+
+    gantt_df = pd.DataFrame(_gantt_data)
+    program_start = pd.Timestamp("2025-01-01")
+    gantt_df["Start"] = program_start + pd.to_timedelta(gantt_df["Start_day"], unit="D")
+    gantt_df["Finish"] = gantt_df["Start"] + pd.to_timedelta(gantt_df["Duration_days"], unit="D")
+
+    gantt_chart = (
+        alt.Chart(gantt_df)
+        .mark_bar()
+        .encode(
+            x=alt.X("Start:T", title="Date"),
+            x2=alt.X2("Finish:T"),
+            y=alt.Y("Task:N", sort=None, title=""),
+            color=alt.Color("Phase:N", legend=alt.Legend(title="Phase")),
+            tooltip=["Task:N", "Phase:N", "Start:T", "Finish:T", "Duration_days:Q"],
+        )
+        .properties(height=550)
+    )
+    st.altair_chart(gantt_chart.interactive(), use_container_width=True)
+    st.caption("Strawman schedule based on A320 STC program template. Start date assumes Jan 1 2025.")
