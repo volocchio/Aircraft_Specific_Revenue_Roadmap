@@ -67,14 +67,12 @@ def fmt_value(key: str, val) -> str:
         return f"{float(val):,.0f} hrs"
     if "months" in k:
         return f"{float(val):.0f} mo"
-    if "(usd m)" in k:
-        return f"${float(val):,.2f}M"
-    # everything else that looks like a dollar amount
+    # flight test dollar items — keep as whole dollars
+    if "flight test" in k and ("cost" in k or "fuel" in k or "crew" in k or "total" in k):
+        return f"${float(val):,.0f}"
+    # all other dollar amounts → always $M
     if "usd" in k or "cost" in k or "price" in k or "revenue" in k or "market" in k or "value" in k or "nre" in k or "readiness" in k or "tooling" in k or "inventory" in k or "acquisition" in k:
-        v = float(val)
-        if abs(v) >= 1_000_000:
-            return f"${v/1_000_000:,.2f}M"
-        return f"${v:,.0f}"
+        return f"${float(val)/1_000_000:,.1f}M"
     # fallback
     try:
         return f"{float(val):,g}"
@@ -143,7 +141,7 @@ with st.sidebar:
         resale_value_usd = 0.0
         st.caption(
             f"Monthly lease: **${lease_usd_per_month:,.0f}**/mo  ·  "
-            f"Total acquisition cost: **${acquisition_cost_usd:,.0f}**"
+            f"Total acquisition cost: **${acquisition_cost_usd/1e6:,.1f}M**"
         )
     else:
         purchase_price_usd = st.number_input(
@@ -153,8 +151,8 @@ with st.sidebar:
         resale_value_usd = float(purchase_price_usd) * float(resale_fraction)
         acquisition_cost_usd = float(purchase_price_usd) - float(resale_value_usd)
         st.caption(
-            f"Resale value: **${resale_value_usd:,.0f}**  ·  "
-            f"Net acquisition cost: **${acquisition_cost_usd:,.0f}**"
+            f"Resale value: **${resale_value_usd/1e6:,.1f}M**  ·  "
+            f"Net acquisition cost: **${acquisition_cost_usd/1e6:,.1f}M**"
         )
 
     st.subheader("Readiness & inventory")
@@ -327,7 +325,7 @@ with col2:
     st.subheader("MTOW vs Total NRE (log-log)")
 
     x_grid = np.logspace(
-        np.log10(cal_df["mtow_lbs"].min() * 0.8),
+        np.log10(5000.0),
         np.log10(cal_df["mtow_lbs"].max() * 1.1),
         200,
     )
@@ -419,11 +417,16 @@ with tab_schedule:
 
     gantt_chart = (
         alt.Chart(gantt_df)
-        .mark_bar()
+        .mark_bar(height={"band": 0.7})
         .encode(
             x=alt.X("Start:T", title="Date"),
             x2=alt.X2("Finish:T"),
-            y=alt.Y("Task:N", sort=None, title=""),
+            y=alt.Y(
+                "Task:N",
+                sort=None,
+                title="",
+                axis=alt.Axis(labelLimit=280, labelFontSize=12),
+            ),
             color=alt.Color("Phase:N", legend=alt.Legend(title="Phase")),
             tooltip=[
                 alt.Tooltip("Task:N", title="Task"),
@@ -433,9 +436,10 @@ with tab_schedule:
                 alt.Tooltip("Duration_days:Q", title="Duration (days)"),
             ],
         )
-        .properties(height=580)
+        .properties(height=700)
+        .configure_view(strokeWidth=0)
     )
-    st.altair_chart(gantt_chart.interactive(), use_container_width=True)
+    st.altair_chart(gantt_chart, use_container_width=True)
     st.caption(
         f"Schedule scaled to **{int(schedule_months)} months** starting **{program_start_quarter} {int(program_start_year)}**. "
         "Proportions based on A320 STC strawman."
