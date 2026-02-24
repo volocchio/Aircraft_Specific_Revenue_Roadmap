@@ -67,11 +67,16 @@ def fmt_value(key: str, val) -> str:
         return f"{float(val):,.0f} hrs"
     if "months" in k:
         return f"{float(val):.0f} mo"
+    # unit counts
+    if k.startswith("units sold"):
+        return f"{int(val):,}"
     # flight test dollar items — keep as whole dollars
     if "flight test" in k and ("cost" in k or "fuel" in k or "crew" in k or "total" in k):
         return f"${float(val):,.0f}"
     # all other dollar amounts → always $M
-    if "usd" in k or "cost" in k or "price" in k or "revenue" in k or "market" in k or "value" in k or "nre" in k or "readiness" in k or "tooling" in k or "inventory" in k or "acquisition" in k:
+    if any(t in k for t in ("usd", "cost", "price", "revenue", "market", "value", "nre",
+                             "readiness", "tooling", "inventory", "acquisition",
+                             "royalt", "license", "cogs", "investment")):
         return f"${float(val)/1_000_000:,.1f}M"
     # fallback
     try:
@@ -210,7 +215,10 @@ with st.sidebar:
 
     st.subheader("Market")
     kit_price_usd = st.number_input(
-        "Price to customer (USD)", min_value=0.0, value=500000.0, step=25000.0, format="%.0f"
+        "Sales price per unit (USD)", min_value=0.0, value=500000.0, step=25000.0, format="%.0f"
+    )
+    cogs_per_unit_usd = st.number_input(
+        "Est. cost of goods sold per unit (USD)", min_value=0.0, value=150000.0, step=10000.0, format="%.0f"
     )
     fleet_size = st.number_input(
         "Fleet size (global in-service)",
@@ -225,6 +233,13 @@ with st.sidebar:
         value=20,
         step=1,
         format="%d%%",
+    )
+    license_fee_usd = st.number_input(
+        "License fee (USD, one-time)", min_value=0.0, value=5000000.0, step=500000.0, format="%.0f"
+    )
+    royalty_pct = st.slider(
+        "Royalty rate (% of gross revenue)",
+        min_value=0, max_value=30, value=10, step=1, format="%d%%"
     )
 
     st.subheader("Schedule")
@@ -258,9 +273,14 @@ all_in_cost_usd = base_nre_usd + float(acquisition_cost_usd) + float(tooling_usd
     production_readiness_usd
 ) + float(inventory_usd) + float(flight_test_total_usd)
 
+units_sold = float(fleet_size) * (float(market_penetration_pct) / 100.0)
 tam_usd = float(fleet_size) * float(kit_price_usd)
-addressable_revenue_usd = tam_usd * (float(market_penetration_pct) / 100.0)
-roi_multiple = addressable_revenue_usd / all_in_cost_usd if all_in_cost_usd > 0 else 0.0
+gross_revenue_usd = units_sold * float(kit_price_usd)
+cogs_total_usd = units_sold * float(cogs_per_unit_usd)
+royalties_usd = gross_revenue_usd * (float(royalty_pct) / 100.0)
+net_revenue_usd = gross_revenue_usd - cogs_total_usd - royalties_usd - float(license_fee_usd)
+roi_multiple = net_revenue_usd / all_in_cost_usd if all_in_cost_usd > 0 else 0.0
+addressable_revenue_usd = gross_revenue_usd
 
 tab_results, tab_schedule = st.tabs(["Results", "Schedule"])
 
@@ -271,27 +291,39 @@ with col1:
     mkt_col1, mkt_col2, mkt_col3 = st.columns(3)
     mkt_col1.metric("Fleet size", f"{int(fleet_size):,}")
     mkt_col2.metric("Total Addressable Market", f"${tam_usd/1e6:,.1f}M")
-    mkt_col3.metric(
-        f"Revenue @ {market_penetration_pct}% penetration",
-        f"${addressable_revenue_usd/1e6:,.1f}M",
-    )
+    mkt_col3.metric(f"Units sold @ {market_penetration_pct}%", f"{int(units_sold):,}")
 
-    roi_col1, roi_col2 = st.columns(2)
-    roi_col1.metric("All-in investment", f"${all_in_cost_usd/1e6:,.1f}M")
-    roi_col2.metric("Revenue / Investment", f"{roi_multiple:.1f}x")
+    st.subheader("Program Investment")
+    inv_col1, inv_col2, inv_col3 = st.columns(3)
+    inv_col1.metric("Certification NRE", f"${base_nre_usd/1e6:,.1f}M")
+    inv_col2.metric("All-in program cost", f"${all_in_cost_usd/1e6:,.1f}M")
+    inv_col3.metric("Production readiness", f"${production_readiness_usd/1e6:,.1f}M")
 
-    st.subheader("Cost Detail")
+    st.subheader("Revenue & Returns")
+    pl_col1, pl_col2, pl_col3 = st.columns(3)
+    pl_col1.metric("Gross revenue", f"${gross_revenue_usd/1e6:,.1f}M")
+    pl_col2.metric("Net revenue", f"${net_revenue_usd/1e6:,.1f}M")
+    pl_col3.metric("Net revenue / Investment", f"{roi_multiple:.1f}x")
+
+    st.subheader("Program Summary")
 
     summary = {
         "Aircraft": selected_aircraft,
         "MTOW (lbs)": float(mtow_lbs),
         "Fleet size (global)": int(fleet_size),
-        "Price to customer (USD)": float(kit_price_usd),
+        "Sales price per unit (USD)": float(kit_price_usd),
+        "Est. COGS per unit (USD)": float(cogs_per_unit_usd),
         "Total addressable market (USD)": float(tam_usd),
-        f"Addressable revenue @ {market_penetration_pct}% (USD)": float(addressable_revenue_usd),
-        "Revenue / investment multiple": float(roi_multiple),
-        "Base certification NRE (USD M)": float(base_nre_usd_m),
-        "Acquisition net cost (USD)": float(acquisition_cost_usd),
+        f"Units sold @ {market_penetration_pct}% penetration": int(units_sold),
+        "Gross revenue (USD)": float(gross_revenue_usd),
+        "COGS total (USD)": float(cogs_total_usd),
+        f"Royalties @ {royalty_pct}% (USD)": float(royalties_usd),
+        "License fee (USD)": float(license_fee_usd),
+        "Net revenue (USD)": float(net_revenue_usd),
+        "Net revenue / investment": float(roi_multiple),
+        "Program investment (USD)": float(all_in_cost_usd),
+        "Certification NRE (USD)": float(base_nre_usd),
+        "Aircraft acquisition cost (USD)": float(acquisition_cost_usd),
         "Tooling (USD)": float(tooling_usd),
         "Production readiness (USD)": float(production_readiness_usd),
         "Inventory (USD)": float(inventory_usd),
@@ -300,7 +332,6 @@ with col1:
         "Flight test fuel cost (USD)": float(flight_test_fuel_usd),
         "Flight test crew cost (USD)": float(flight_test_crew_usd),
         "Flight test total (USD)": float(flight_test_total_usd),
-        "All-in cost to readiness (USD)": float(all_in_cost_usd),
         "Estimated schedule (months)": float(schedule_months),
     }
 
