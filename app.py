@@ -184,6 +184,25 @@ with st.sidebar:
         "MTOW (lbs)", min_value=1.0, value=float(mtow_default), step=100.0, format="%.0f"
     )
 
+    st.subheader("Schedule")
+    schedule_months = st.number_input(
+        "Estimated schedule (months)", min_value=1.0, value=24.0, step=1.0, format="%.0f"
+    )
+    _current_year = pd.Timestamp.now().year
+    program_start_year = st.number_input(
+        "Program start year", min_value=2020, max_value=2040, value=_current_year, step=1, format="%d"
+    )
+    program_start_quarter = st.selectbox(
+        "Program start quarter", options=["Q1", "Q2", "Q3", "Q4"], index=0
+    )
+    _q_month = {"Q1": 1, "Q2": 4, "Q3": 7, "Q4": 10}[program_start_quarter]
+    program_start_date = pd.Timestamp(year=int(program_start_year), month=_q_month, day=1)
+    program_end_date = program_start_date + pd.DateOffset(months=int(schedule_months))
+    st.caption(
+        f"Program: **{program_start_date.strftime('%b %Y')}** \u2192 **{program_end_date.strftime('%b %Y')}** "
+        f"({int(schedule_months)} mo)"
+    )
+
     st.subheader("Aircraft acquisition")
     acquisition_mode = st.selectbox("Mode", options=["Lease", "Purchase"], index=0)
     st.caption("Aircraft held during STC program only — released at certification.")
@@ -310,24 +329,6 @@ with st.sidebar:
         f"Gross revenue @ {market_penetration_pct}%: **${_gross/1e6:,.1f}M**"
     )
 
-    st.subheader("Schedule")
-    schedule_months = st.number_input(
-        "Estimated schedule (months)", min_value=1.0, value=24.0, step=1.0, format="%.0f"
-    )
-    _current_year = pd.Timestamp.now().year
-    program_start_year = st.number_input(
-        "Program start year", min_value=2020, max_value=2040, value=_current_year, step=1, format="%d"
-    )
-    program_start_quarter = st.selectbox(
-        "Program start quarter", options=["Q1", "Q2", "Q3", "Q4"], index=0
-    )
-    _q_month = {"Q1": 1, "Q2": 4, "Q3": 7, "Q4": 10}[program_start_quarter]
-    program_start_date = pd.Timestamp(year=int(program_start_year), month=_q_month, day=1)
-    program_end_date = program_start_date + pd.DateOffset(months=int(schedule_months))
-    st.caption(
-        f"Program: **{program_start_date.strftime('%b %Y')}** → **{program_end_date.strftime('%b %Y')}** "
-        f"({int(schedule_months)} mo)"
-    )
 
 cal_df = load_calibration("data/nre_calibration.csv")
 # Scale calibration NRE values by user engineering rate vs baseline $175/hr
