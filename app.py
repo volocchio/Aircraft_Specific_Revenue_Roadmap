@@ -697,7 +697,7 @@ with tab_schedule:
             x=alt.X(
                 "Start:T",
                 title="Quarter",
-                axis=alt.Axis(tickCount="quarter", format="%b %Y", labelAngle=-45),
+                axis=alt.Axis(tickCount=alt.TimeInterval(interval="month", step=3), format="%b %Y", labelAngle=-45),
             ),
             x2=alt.X2("Finish:T"),
             y=alt.Y(
