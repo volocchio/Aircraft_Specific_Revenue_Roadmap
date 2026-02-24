@@ -5,6 +5,13 @@ import altair as alt
 import numpy as np
 import pandas as pd
 import streamlit as st
+from reportlab.lib import colors
+from reportlab.lib.pagesizes import letter
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.lib.units import inch
+from reportlab.platypus import (
+    Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+)
 
 
 def fit_power_law(xs: np.ndarray, ys: np.ndarray) -> tuple[float, float]:
@@ -49,6 +56,57 @@ def build_export_table(summary: dict) -> pd.DataFrame:
         [{"metric": str(k), "value": "" if v is None else str(v)} for k, v in summary.items()],
         columns=["metric", "value"],
     )
+
+
+def build_pdf(summary: dict, aircraft: str, program_start: str, program_end: str) -> bytes:
+    buf = io.BytesIO()
+    doc = SimpleDocTemplate(
+        buf, pagesize=letter,
+        leftMargin=0.75*inch, rightMargin=0.75*inch,
+        topMargin=0.75*inch, bottomMargin=0.75*inch,
+    )
+    styles = getSampleStyleSheet()
+    title_style = ParagraphStyle(
+        "title", parent=styles["Heading1"], fontSize=16, spaceAfter=6
+    )
+    section_style = ParagraphStyle(
+        "section", parent=styles["Heading2"], fontSize=12,
+        spaceBefore=12, spaceAfter=4, textColor=colors.HexColor("#1f4e79")
+    )
+    body_style = styles["Normal"]
+
+    tbl_style = TableStyle([
+        ("BACKGROUND",  (0, 0), (-1, 0), colors.HexColor("#1f4e79")),
+        ("TEXTCOLOR",   (0, 0), (-1, 0), colors.white),
+        ("FONTNAME",    (0, 0), (-1, 0), "Helvetica-Bold"),
+        ("FONTSIZE",    (0, 0), (-1, -1), 9),
+        ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#f2f7fc")]),
+        ("GRID",        (0, 0), (-1, -1), 0.4, colors.HexColor("#cccccc")),
+        ("LEFTPADDING", (0, 0), (-1, -1), 6),
+        ("RIGHTPADDING",(0, 0), (-1, -1), 6),
+        ("TOPPADDING",  (0, 0), (-1, -1), 3),
+        ("BOTTOMPADDING",(0, 0), (-1, -1), 3),
+    ])
+
+    story = []
+    story.append(Paragraph("Tamarack STC Cost & Schedule Estimator", title_style))
+    story.append(Paragraph(
+        f"Aircraft: {aircraft}  |  Program: {program_start} → {program_end}",
+        body_style
+    ))
+    story.append(Spacer(1, 0.15*inch))
+
+    story.append(Paragraph("Program Summary", section_style))
+    rows = [["Metric", "Value"]]
+    for k, v in summary.items():
+        rows.append([str(k), fmt_value(str(k), v)])
+    col_w = [4.0*inch, 2.5*inch]
+    t = Table(rows, colWidths=col_w, repeatRows=1)
+    t.setStyle(tbl_style)
+    story.append(t)
+
+    doc.build(story)
+    return buf.getvalue()
 
 
 def fmt_value(key: str, val) -> str:
@@ -128,10 +186,7 @@ with st.sidebar:
 
     st.subheader("Aircraft acquisition")
     acquisition_mode = st.selectbox("Mode", options=["Lease", "Purchase"], index=0)
-
-    acquisition_months = st.number_input(
-        "Months held (including STC program)", min_value=0, value=24, step=1
-    )
+    st.caption("Aircraft held during STC program only — released at certification.")
 
     if acquisition_mode == "Lease":
         hull_value_usd = st.number_input(
@@ -142,23 +197,30 @@ with st.sidebar:
             min_value=0.5, max_value=3.0, value=1.0, step=0.1, format="%.1f%%"
         )
         lease_usd_per_month = hull_value_usd * (lease_rate_pct / 100.0)
-        acquisition_cost_usd = lease_usd_per_month * float(acquisition_months)
+        # Lease runs for schedule_months only — ends at STC issuance
+        acquisition_cost_usd = lease_usd_per_month * schedule_months
         resale_value_usd = 0.0
         st.caption(
-            f"Monthly lease: **${lease_usd_per_month:,.0f}**/mo  ·  "
-            f"Total acquisition cost: **${acquisition_cost_usd/1e6:,.1f}M**"
+            f"**${lease_usd_per_month:,.0f}**/mo × {int(schedule_months)} mo = "
+            f"**${acquisition_cost_usd/1e6:,.1f}M** total lease cost"
         )
     else:
         purchase_price_usd = st.number_input(
             "Purchase price ($M)", min_value=0.0, value=round(hull_value_default/1e6, 2), step=0.25, format="%.2f"
         ) * 1e6
-        resale_fraction = st.slider("Resale fraction", min_value=0.0, max_value=1.0, value=0.9, format="%.2f")
+        resale_fraction = st.slider("Resale value at STC (% of purchase)", min_value=0.0, max_value=1.0, value=0.9, format="%.2f")
         resale_value_usd = float(purchase_price_usd) * float(resale_fraction)
         acquisition_cost_usd = float(purchase_price_usd) - float(resale_value_usd)
         st.caption(
-            f"Resale value: **${resale_value_usd/1e6:,.1f}M**  ·  "
-            f"Net acquisition cost: **${acquisition_cost_usd/1e6:,.1f}M**"
+            f"Purchase **${purchase_price_usd/1e6:,.1f}M** − resale **${resale_value_usd/1e6:,.1f}M** = "
+            f"net cost **${acquisition_cost_usd/1e6:,.1f}M**"
         )
+
+    st.subheader("Engineering")
+    eng_rate_usd_per_hr = st.slider(
+        "Engineering rate (USD/hr)",
+        min_value=100, max_value=350, value=175, step=5, format="$%d"
+    )
 
     st.subheader("Readiness & inventory")
     tooling_usd = st.number_input("Tooling ($M)", min_value=0.0, value=0.75, step=0.05, format="%.2f") * 1e6
@@ -241,6 +303,12 @@ with st.sidebar:
         "Royalty rate (% of gross revenue)",
         min_value=0, max_value=30, value=10, step=1, format="%d%%"
     )
+    _tam = fleet_size * kit_price_usd
+    _gross = fleet_size * (market_penetration_pct / 100.0) * kit_price_usd
+    st.caption(
+        f"TAM: **${_tam/1e6:,.1f}M**  ·  "
+        f"Gross revenue @ {market_penetration_pct}%: **${_gross/1e6:,.1f}M**"
+    )
 
     st.subheader("Schedule")
     schedule_months = st.number_input(
@@ -262,7 +330,10 @@ with st.sidebar:
     )
 
 cal_df = load_calibration("data/nre_calibration.csv")
-a, b = fit_power_law(cal_df["mtow_lbs"].to_numpy(), cal_df["total_nre_usd_m"].to_numpy())
+# Scale calibration NRE values by user engineering rate vs baseline $175/hr
+_rate_scale = float(eng_rate_usd_per_hr) / 175.0
+_scaled_nre = cal_df["total_nre_usd_m"].to_numpy() * _rate_scale
+a, b = fit_power_law(cal_df["mtow_lbs"].to_numpy(), _scaled_nre)
 
 base_nre_usd_m = predict_power_law(float(mtow_lbs), a, b)
 base_nre_usd = base_nre_usd_m * 1_000_000.0
@@ -285,7 +356,7 @@ net_revenue_usd = gross_revenue_usd - cogs_total_usd - royalties_usd - float(lic
 roi_multiple = net_revenue_usd / all_in_cost_usd if all_in_cost_usd > 0 else 0.0
 addressable_revenue_usd = gross_revenue_usd
 
-tab_results, tab_schedule = st.tabs(["Results", "Schedule"])
+tab_results, tab_finance, tab_schedule = st.tabs(["Results", "Financial Statements", "Schedule"])
 
 col1, col2 = tab_results.columns([1.2, 1])
 
@@ -340,19 +411,17 @@ with col1:
 
     st.dataframe(build_display_table(summary), use_container_width=True, hide_index=True)
 
-    export_df = pd.DataFrame([summary])
-    csv_bytes = export_df.to_csv(index=False).encode("utf-8")
-    st.download_button("Download CSV", data=csv_bytes, file_name="stc_estimate.csv")
-
-    xlsx_buffer = io.BytesIO()
-    with pd.ExcelWriter(xlsx_buffer, engine="openpyxl") as writer:
-        export_df.to_excel(writer, index=False, sheet_name="Estimate")
-        cal_df.to_excel(writer, index=False, sheet_name="NRE_Calibration")
+    _pdf_bytes = build_pdf(
+        summary,
+        aircraft=selected_aircraft,
+        program_start=program_start_date.strftime("%b %Y"),
+        program_end=program_end_date.strftime("%b %Y"),
+    )
     st.download_button(
-        "Download Excel",
-        data=xlsx_buffer.getvalue(),
-        file_name="stc_estimate.xlsx",
-        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        "Download PDF",
+        data=_pdf_bytes,
+        file_name="stc_estimate.pdf",
+        mime="application/pdf",
     )
 
 with col2:
@@ -400,6 +469,177 @@ with col2:
     st.altair_chart((line + points).interactive(), use_container_width=True)
 
 tab_results.caption("Calibration points and aircraft list can be edited in the data/ folder.")
+
+with tab_finance:
+    st.subheader(f"Financial Statements — {program_start_quarter} {int(program_start_year)}")
+
+    # ── Timeline ──────────────────────────────────────────────────────────────
+    # Phase 1: Program (investment spend, zero revenue)
+    # Phase 2: Revenue ramp starting at STC issuance (program_end_date)
+    # Assume revenue ramps over 3 years post-STC, then steady state
+    _rev_ramp_years = 3
+    _rev_periods = pd.date_range(
+        start=program_end_date, periods=_rev_ramp_years * 4 + 1, freq="QE"
+    )
+    _total_rev_quarters = len(_rev_periods) - 1
+    # Ramp: units sold distributed as 10%, 20%, 30%, 40% over 4 quarters per year
+    _ramp_weights = [0.05, 0.10, 0.15, 0.20, 0.20, 0.15, 0.10, 0.05,
+                     0.125, 0.125, 0.125, 0.125]
+    _ramp_weights = (_ramp_weights + [1/_total_rev_quarters] *
+                     max(0, _total_rev_quarters - len(_ramp_weights)))
+    _ramp_weights = _ramp_weights[:_total_rev_quarters]
+    _wsum = sum(_ramp_weights)
+    _ramp_weights = [w / _wsum for w in _ramp_weights]
+
+    # ── Income Statement ──────────────────────────────────────────────────────
+    st.markdown("### Income Statement (Program Lifetime, $M)")
+    _gross_margin = gross_revenue_usd - cogs_total_usd
+    _ebit = _gross_margin - royalties_usd - license_fee_usd - all_in_cost_usd
+    _is_rows = [
+        ("Gross Revenue",            f"${gross_revenue_usd/1e6:,.1f}M"),
+        ("Cost of Goods Sold",       f"(${cogs_total_usd/1e6:,.1f}M)"),
+        ("Gross Margin",             f"${_gross_margin/1e6:,.1f}M"),
+        ("Royalties",                f"(${royalties_usd/1e6:,.1f}M)"),
+        ("License Fee",              f"(${license_fee_usd/1e6:,.1f}M)"),
+        ("Program Investment (NRE + Readiness + Tooling + Test + Acquisition + Inventory)",
+                                     f"(${all_in_cost_usd/1e6:,.1f}M)"),
+        ("**Net Income**",           f"**${_ebit/1e6:,.1f}M**"),
+    ]
+    is_df = pd.DataFrame(_is_rows, columns=["Line Item", "Amount ($M)"])
+    st.dataframe(is_df, use_container_width=True, hide_index=True)
+
+    st.divider()
+
+    # ── Cash Flow Statement ───────────────────────────────────────────────────
+    st.markdown("### Cash Flow Statement (Program Lifetime, $M)")
+    _cf_ops = gross_revenue_usd - cogs_total_usd - royalties_usd - license_fee_usd
+    _cf_invest = -(base_nre_usd + tooling_usd + float(flight_test_total_usd) +
+                   acquisition_cost_usd + inventory_usd + production_readiness_usd)
+    _cf_net = _cf_ops + _cf_invest
+    _cf_rows = [
+        ("Operating Activities", ""),
+        ("  Revenue collected",        f"${gross_revenue_usd/1e6:,.1f}M"),
+        ("  COGS paid",                f"(${cogs_total_usd/1e6:,.1f}M)"),
+        ("  Royalties paid",           f"(${royalties_usd/1e6:,.1f}M)"),
+        ("  License fee paid",         f"(${license_fee_usd/1e6:,.1f}M)"),
+        ("**Net cash from operations**", f"**${_cf_ops/1e6:,.1f}M**"),
+        ("", ""),
+        ("Investing / Development Activities", ""),
+        ("  Certification NRE",        f"(${base_nre_usd/1e6:,.1f}M)"),
+        ("  Production readiness",     f"(${production_readiness_usd/1e6:,.1f}M)"),
+        ("  Tooling",                  f"(${tooling_usd/1e6:,.1f}M)"),
+        ("  Flight testing",           f"(${float(flight_test_total_usd)/1e6:,.1f}M)"),
+        ("  Aircraft acquisition",     f"(${acquisition_cost_usd/1e6:,.1f}M)"),
+        ("  Inventory",                f"(${inventory_usd/1e6:,.1f}M)"),
+        ("**Net cash from investing**", f"**${_cf_invest/1e6:,.1f}M**"),
+        ("", ""),
+        ("**Net cash flow (lifetime)**", f"**${_cf_net/1e6:,.1f}M**"),
+    ]
+    cf_df = pd.DataFrame(_cf_rows, columns=["Line Item", "Amount ($M)"])
+    st.dataframe(cf_df, use_container_width=True, hide_index=True)
+
+    st.divider()
+
+    # ── Balance Sheet ─────────────────────────────────────────────────────────
+    st.markdown("### Balance Sheet (at Program Completion, $M)")
+    _assets_cash = max(0.0, _cf_net)
+    _assets_inv = inventory_usd
+    _assets_total = _assets_cash + _assets_inv
+    _liab_deferred = 0.0
+    _equity = _assets_total - _liab_deferred
+    _bs_rows = [
+        ("**ASSETS**", ""),
+        ("  Cash & equivalents",       f"${_assets_cash/1e6:,.1f}M"),
+        ("  Inventory",                f"${_assets_inv/1e6:,.1f}M"),
+        ("**Total Assets**",           f"**${_assets_total/1e6:,.1f}M**"),
+        ("", ""),
+        ("**LIABILITIES**", ""),
+        ("  Deferred obligations",     f"${_liab_deferred/1e6:,.1f}M"),
+        ("**Total Liabilities**",      f"**${_liab_deferred/1e6:,.1f}M**"),
+        ("", ""),
+        ("**EQUITY**", ""),
+        ("**Retained earnings**",      f"**${_equity/1e6:,.1f}M**"),
+    ]
+    bs_df = pd.DataFrame(_bs_rows, columns=["Line Item", "Amount ($M)"])
+    st.dataframe(bs_df, use_container_width=True, hide_index=True)
+
+    st.divider()
+
+    # ── Cumulative Cash Flow Chart ────────────────────────────────────────────
+    st.markdown("### Cumulative Cash Flow Over Time ($M)")
+
+    # Build quarterly time series
+    _prog_quarters = pd.date_range(
+        start=program_start_date, end=program_end_date, freq="QE"
+    )
+    if len(_prog_quarters) == 0:
+        _prog_quarters = pd.date_range(start=program_start_date, periods=2, freq="QE")
+
+    _n_prog_q = len(_prog_quarters)
+    _spend_per_q = all_in_cost_usd / _n_prog_q
+
+    _cf_rows_ts = []
+    _cum = 0.0
+    for _q in _prog_quarters:
+        _cum -= _spend_per_q
+        _cf_rows_ts.append({"Quarter": _q, "Cumulative Cash Flow ($M)": _cum / 1e6,
+                             "Phase": "Investment"})
+
+    # At STC completion: aircraft sold (Purchase) or lease ends — recover resale value
+    _cum += float(resale_value_usd)
+
+    # Revenue phase
+    for _i, _q in enumerate(_rev_periods[1:]):
+        _q_rev = gross_revenue_usd * _ramp_weights[_i]
+        _q_cogs = cogs_total_usd * _ramp_weights[_i]
+        _q_roy = royalties_usd * _ramp_weights[_i]
+        _q_lic = license_fee_usd if _i == 0 else 0.0
+        _cum += (_q_rev - _q_cogs - _q_roy - _q_lic)
+        _cf_rows_ts.append({"Quarter": _q, "Cumulative Cash Flow ($M)": _cum / 1e6,
+                             "Phase": "Revenue"})
+
+    _cf_ts_df = pd.DataFrame(_cf_rows_ts)
+    _cf_ts_df["Quarter_label"] = _cf_ts_df["Quarter"].dt.strftime("%b %Y")
+
+    _zero_line = pd.DataFrame({
+        "Quarter": [_cf_ts_df["Quarter"].min(), _cf_ts_df["Quarter"].max()],
+        "y": [0, 0],
+    })
+
+    _area = (
+        alt.Chart(_cf_ts_df)
+        .mark_area(opacity=0.3)
+        .encode(
+            x=alt.X("Quarter:T", title="Quarter"),
+            y=alt.Y("Cumulative Cash Flow ($M):Q", title="Cumulative Cash Flow ($M)"),
+            color=alt.Color("Phase:N", legend=alt.Legend(title="")),
+        )
+    )
+    _line = (
+        alt.Chart(_cf_ts_df)
+        .mark_line(point=True)
+        .encode(
+            x=alt.X("Quarter:T"),
+            y=alt.Y("Cumulative Cash Flow ($M):Q"),
+            color=alt.Color("Phase:N"),
+            tooltip=[
+                alt.Tooltip("Quarter_label:N", title="Quarter"),
+                alt.Tooltip("Cumulative Cash Flow ($M):Q", title="Cum. CF ($M)", format=".1f"),
+                alt.Tooltip("Phase:N", title="Phase"),
+            ],
+        )
+    )
+    _zero = (
+        alt.Chart(_zero_line)
+        .mark_rule(color="gray", strokeDash=[4, 4])
+        .encode(y=alt.Y("y:Q"))
+    )
+    st.altair_chart((_area + _line + _zero).interactive(), use_container_width=True)
+    st.caption(
+        f"Investment phase: **{program_start_quarter} {int(program_start_year)}** → "
+        f"**{program_end_date.strftime('%b %Y')}**. "
+        f"Revenue ramp: {_rev_ramp_years} years post-STC."
+    )
 
 with tab_schedule:
     st.subheader(
@@ -453,7 +693,11 @@ with tab_schedule:
         alt.Chart(gantt_df)
         .mark_bar(height={"band": 0.7})
         .encode(
-            x=alt.X("Start:T", title="Date"),
+            x=alt.X(
+                "Start:T",
+                title="Quarter",
+                axis=alt.Axis(tickCount="quarter", format="%b %Y", labelAngle=-45),
+            ),
             x2=alt.X2("Finish:T"),
             y=alt.Y(
                 "Task:N",
