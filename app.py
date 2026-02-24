@@ -135,8 +135,8 @@ with st.sidebar:
 
     if acquisition_mode == "Lease":
         hull_value_usd = st.number_input(
-            "Hull value (USD)", min_value=0.0, value=hull_value_default, step=250000.0, format="%.0f"
-        )
+            "Hull value ($M)", min_value=0.0, value=round(hull_value_default/1e6, 2), step=0.25, format="%.2f"
+        ) * 1e6
         lease_rate_pct = st.slider(
             "Lease rate (% of hull/month)",
             min_value=0.5, max_value=3.0, value=1.0, step=0.1, format="%.1f%%"
@@ -150,8 +150,8 @@ with st.sidebar:
         )
     else:
         purchase_price_usd = st.number_input(
-            "Purchase price (USD)", min_value=0.0, value=hull_value_default, step=250000.0, format="%.0f"
-        )
+            "Purchase price ($M)", min_value=0.0, value=round(hull_value_default/1e6, 2), step=0.25, format="%.2f"
+        ) * 1e6
         resale_fraction = st.slider("Resale fraction", min_value=0.0, max_value=1.0, value=0.9, format="%.2f")
         resale_value_usd = float(purchase_price_usd) * float(resale_fraction)
         acquisition_cost_usd = float(purchase_price_usd) - float(resale_value_usd)
@@ -161,14 +161,14 @@ with st.sidebar:
         )
 
     st.subheader("Readiness & inventory")
-    tooling_usd = st.number_input("Tooling (USD)", min_value=0.0, value=750000.0, step=50000.0, format="%.0f")
+    tooling_usd = st.number_input("Tooling ($M)", min_value=0.0, value=0.75, step=0.05, format="%.2f") * 1e6
     inventory_usd = st.number_input(
-        "Required inventory to start installs (USD)",
+        "Required inventory to start installs ($M)",
         min_value=0.0,
-        value=1500000.0,
-        step=50000.0,
-        format="%.0f",
-    )
+        value=1.5,
+        step=0.1,
+        format="%.2f",
+    ) * 1e6
     prod_readiness_pct = st.slider(
         "Production readiness (% of cert NRE)",
         min_value=0,
@@ -215,11 +215,11 @@ with st.sidebar:
 
     st.subheader("Market")
     kit_price_usd = st.number_input(
-        "Sales price per unit (USD)", min_value=0.0, value=500000.0, step=25000.0, format="%.0f"
-    )
+        "Sales price per unit ($M)", min_value=0.0, value=0.5, step=0.05, format="%.2f"
+    ) * 1e6
     cogs_per_unit_usd = st.number_input(
-        "Est. cost of goods sold per unit (USD)", min_value=0.0, value=150000.0, step=10000.0, format="%.0f"
-    )
+        "Est. COGS per unit ($M)", min_value=0.0, value=0.15, step=0.01, format="%.2f"
+    ) * 1e6
     fleet_size = st.number_input(
         "Fleet size (global in-service)",
         min_value=0,
@@ -235,8 +235,8 @@ with st.sidebar:
         format="%d%%",
     )
     license_fee_usd = st.number_input(
-        "License fee (USD, one-time)", min_value=0.0, value=5000000.0, step=500000.0, format="%.0f"
-    )
+        "License fee ($M, one-time)", min_value=0.0, value=5.0, step=0.5, format="%.1f"
+    ) * 1e6
     royalty_pct = st.slider(
         "Royalty rate (% of gross revenue)",
         min_value=0, max_value=30, value=10, step=1, format="%d%%"
@@ -268,6 +268,9 @@ base_nre_usd_m = predict_power_law(float(mtow_lbs), a, b)
 base_nre_usd = base_nre_usd_m * 1_000_000.0
 
 production_readiness_usd = base_nre_usd * (float(prod_readiness_pct) / 100.0)
+# Surface readiness value back into sidebar as a caption
+with st.sidebar:
+    st.caption(f"Production readiness: **${production_readiness_usd/1e6:,.1f}M** ({prod_readiness_pct}% of ${base_nre_usd/1e6:,.1f}M NRE)")
 
 all_in_cost_usd = base_nre_usd + float(acquisition_cost_usd) + float(tooling_usd) + float(
     production_readiness_usd
