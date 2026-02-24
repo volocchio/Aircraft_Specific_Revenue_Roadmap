@@ -51,6 +51,44 @@ def build_export_table(summary: dict) -> pd.DataFrame:
     )
 
 
+def fmt_value(key: str, val) -> str:
+    if val is None:
+        return ""
+    k = str(key).lower()
+    # plain text fields
+    if "aircraft" in k and "market" not in k:
+        return str(val)
+    # unit-less counts / ratios
+    if "fleet" in k:
+        return f"{int(val):,}"
+    if "multiple" in k or "ratio" in k:
+        return f"{float(val):.2f}x"
+    if "hours" in k:
+        return f"{float(val):,.0f} hrs"
+    if "months" in k:
+        return f"{float(val):.0f} mo"
+    if "(usd m)" in k:
+        return f"${float(val):,.2f}M"
+    # everything else that looks like a dollar amount
+    if "usd" in k or "cost" in k or "price" in k or "revenue" in k or "market" in k or "value" in k or "nre" in k or "readiness" in k or "tooling" in k or "inventory" in k or "acquisition" in k:
+        v = float(val)
+        if abs(v) >= 1_000_000:
+            return f"${v/1_000_000:,.2f}M"
+        return f"${v:,.0f}"
+    # fallback
+    try:
+        return f"{float(val):,g}"
+    except (ValueError, TypeError):
+        return str(val)
+
+
+def build_display_table(summary: dict) -> pd.DataFrame:
+    return pd.DataFrame(
+        [{"Metric": k, "Value": fmt_value(k, v)} for k, v in summary.items()],
+        columns=["Metric", "Value"],
+    )
+
+
 st.set_page_config(page_title="Tamarack STC Cost & Schedule Estimator", layout="wide")
 st.title("Tamarack STC Cost & Schedule Estimator")
 
@@ -166,14 +204,14 @@ with st.sidebar:
     )
 
     st.subheader("Market")
+    kit_price_usd = st.number_input(
+        "Price to customer (USD)", min_value=0.0, value=500000.0, step=25000.0, format="%.0f"
+    )
     fleet_size = st.number_input(
         "Fleet size (global in-service)",
         min_value=0,
         value=fleet_size_default,
         step=10,
-    )
-    kit_price_usd = st.number_input(
-        "Kit price (USD)", min_value=0.0, value=500000.0, step=25000.0, format="%.0f"
     )
     market_penetration_pct = st.slider(
         "Expected market penetration",
@@ -229,7 +267,7 @@ with col1:
         "Aircraft": selected_aircraft,
         "MTOW (lbs)": float(mtow_lbs),
         "Fleet size (global)": int(fleet_size),
-        "Kit price (USD)": float(kit_price_usd),
+        "Price to customer (USD)": float(kit_price_usd),
         "Total addressable market (USD)": float(tam_usd),
         f"Addressable revenue @ {market_penetration_pct}% (USD)": float(addressable_revenue_usd),
         "Revenue / investment multiple": float(roi_multiple),
@@ -247,7 +285,7 @@ with col1:
         "Estimated schedule (months)": float(schedule_months),
     }
 
-    st.dataframe(build_export_table(summary), use_container_width=True, hide_index=True)
+    st.dataframe(build_display_table(summary), use_container_width=True, hide_index=True)
 
     export_df = pd.DataFrame([summary])
     csv_bytes = export_df.to_csv(index=False).encode("utf-8")
