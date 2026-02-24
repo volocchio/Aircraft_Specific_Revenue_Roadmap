@@ -1,6 +1,191 @@
-aircraft,mtow_lbs,notes
-Cessna Citation CJ3+,13870,
-Pilatus PC-12 NGX,10450,
-Beechcraft King Air 350,15000,
-Cessna Citation XLS+,20800,
-Gulfstream G280,88500,
+aircraft,mtow_lbs,fuel_burn_gph,fleet_size,notes
+Cessna Citation CJ1,10700,130,690,Light jet
+Cessna Citation CJ2+,12500,150,320,Light jet
+Cessna Citation CJ3+,13870,170,580,Light jet
+Cessna Citation CJ4,17110,200,410,Light jet
+Cessna Citation M2,10700,120,550,Light jet
+Cessna Citation Mustang,8645,90,480,Very light jet
+Cessna Citation XLS+,20800,220,870,Midsize jet
+Cessna Citation Latitude,30100,270,420,Midsize jet
+Cessna Citation Longitude,45100,350,120,Super-midsize jet
+Cessna Citation Sovereign+,31000,280,350,Midsize jet
+Cessna Citation X+,36100,320,280,Super-midsize jet
+Beechcraft King Air C90GTx,10100,100,820,Turboprop twin
+Beechcraft King Air 250,12500,110,530,Turboprop twin
+Beechcraft King Air 350,15000,110,1650,Turboprop twin
+Beechcraft King Air 350ER,15000,110,180,Turboprop twin
+Beechcraft King Air 360,15000,115,220,Turboprop twin
+Beechcraft Premier I,12500,175,210,Light jet
+Beechcraft Beechjet 400A,16100,200,540,Light jet
+Pilatus PC-12 NGX,10450,75,1900,Turboprop single
+Pilatus PC-24,17637,225,180,Light jet
+Piper M600 SLS,6000,55,310,Turboprop single
+Piper M500,6000,53,220,Turboprop single
+Piper Meridian,5092,40,480,Turboprop single
+Piper Cheyenne IIIA,11200,130,190,Turboprop twin
+Daher TBM 940,7394,60,520,Turboprop single
+Daher TBM 960,7394,62,150,Turboprop single
+Daher TBM 700,6578,55,680,Turboprop single
+Daher TBM 850,6578,57,430,Turboprop single
+Socata TBM 900,7394,58,310,Turboprop single
+Epic E1000 G2,7500,65,80,Turboprop single
+Cirrus Vision SF50,6000,85,340,Very light jet
+HondaJet Elite II,10600,130,230,Very light jet
+Embraer Phenom 100EV,10582,135,370,Very light jet
+Embraer Phenom 300E,17968,200,680,Light jet
+Embraer Legacy 450,36375,310,130,Super-midsize jet
+Embraer Legacy 500,38360,320,170,Super-midsize jet
+Embraer Praetor 500,38360,320,90,Super-midsize jet
+Embraer Praetor 600,45415,360,75,Super-midsize jet
+Embraer Legacy 600,48500,370,240,Large cabin jet
+Embraer Lineage 1000E,93696,550,30,Ultra-long-range jet
+Bombardier Learjet 40XR,20500,230,280,Light jet
+Bombardier Learjet 45XR,21500,240,390,Light jet
+Bombardier Learjet 60XR,23500,280,310,Midsize jet
+Bombardier Learjet 70,21500,245,120,Light jet
+Bombardier Learjet 75 Liberty,21500,250,100,Light jet
+Bombardier Challenger 300,38000,320,540,Super-midsize jet
+Bombardier Challenger 350,38000,325,530,Super-midsize jet
+Bombardier Challenger 3500,38000,330,80,Super-midsize jet
+Bombardier Challenger 604,47600,420,310,Large cabin jet
+Bombardier Challenger 650,47600,425,200,Large cabin jet
+Bombardier Global 5000,89078,550,390,Ultra-long-range jet
+Bombardier Global 5500,93500,560,120,Ultra-long-range jet
+Bombardier Global 6000,99206,570,280,Ultra-long-range jet
+Bombardier Global 6500,99750,580,130,Ultra-long-range jet
+Bombardier Global 7500,111000,680,200,Ultra-long-range jet
+Bombardier Q400,65000,360,560,Turboprop regional
+Bombardier Q200,41005,240,90,Turboprop regional
+Bombardier Q300,43000,270,120,Turboprop regional
+Gulfstream G200,35274,310,210,Midsize jet
+Gulfstream G280,88500,400,160,Super-midsize jet
+Gulfstream G450,73000,490,300,Large cabin jet
+Gulfstream G500,88000,530,130,Ultra-long-range jet
+Gulfstream G550,91000,540,590,Ultra-long-range jet
+Gulfstream G600,93500,550,90,Ultra-long-range jet
+Gulfstream G650ER,99600,600,480,Ultra-long-range jet
+Gulfstream G700,107600,650,120,Ultra-long-range jet
+Gulfstream G800,107600,660,20,Ultra-long-range jet
+Dassault Falcon 2000LXS,41800,340,180,Midsize jet
+Dassault Falcon 2000S,41800,335,120,Midsize jet
+Dassault Falcon 7X,70000,470,280,Large cabin jet
+Dassault Falcon 8X,73000,490,100,Large cabin jet
+Dassault Falcon 900LX,46000,380,190,Large cabin jet
+Dassault Falcon 6X,75000,500,40,Large cabin jet
+Dassault Falcon 10X,107000,640,10,Ultra-long-range jet
+Dassault Falcon 50EX,38800,330,150,Large cabin jet
+Dassault Falcon 2000EX,41800,340,200,Midsize jet
+Hawker 800XP,27400,280,570,Midsize jet
+Hawker 900XP,28000,285,210,Midsize jet
+Hawker 4000,30000,295,70,Super-midsize jet
+BAe 125-700,25500,260,180,Midsize jet
+BAe 125-800,27400,275,390,Midsize jet
+Raytheon Hawker 400XP,16100,200,320,Light jet
+IAI Gulfstream G100,23500,240,110,Midsize jet
+IAI Gulfstream G150,26500,260,90,Midsize jet
+Mitsubishi MU-2B-60,11575,130,380,Turboprop twin
+Mitsubishi MU-300 Diamond,15653,195,100,Light jet
+Mitsubishi Honda MRJ,85980,480,40,Regional jet
+ATR 42-600,41226,290,310,Turboprop regional
+ATR 72-600,49604,340,890,Turboprop regional
+Saab 340B,28218,200,340,Turboprop regional
+Saab 2000,50265,310,60,Turboprop regional
+Dornier 328-100,30203,220,90,Turboprop regional
+De Havilland DHC-6 Twin Otter,12500,90,590,Turboprop twin
+De Havilland DHC-8-100,34392,240,130,Turboprop regional
+Cessna Caravan 208B,8750,65,2800,Turboprop single
+Cessna Grand Caravan EX,8750,68,400,Turboprop single
+Cessna SkyCourier 408,17750,140,60,Turboprop twin
+Tecnam P2012 Traveller,7716,80,40,Turboprop twin
+Jetstream 41,23259,185,150,Turboprop regional
+Embraer EMB-120 Brasilia,26433,210,190,Turboprop regional
+Beechcraft 1900D,17120,150,480,Turboprop regional
+Piper Cheyenne 400LS,12050,145,110,Turboprop twin
+Nextant 400XTi,16100,200,80,Light jet
+Aerion AS2,120000,700,0,Supersonic business jet
+Boeing 737-700,154500,820,1000,Narrow-body airliner
+Boeing 737-800,174200,900,4900,Narrow-body airliner
+Boeing 737-900ER,187700,950,500,Narrow-body airliner
+Boeing 737 MAX 8,181878,880,1100,Narrow-body airliner
+Boeing 737 MAX 9,194700,920,250,Narrow-body airliner
+Boeing 737 MAX 10,204000,960,50,Narrow-body airliner
+Boeing 757-200,255000,1200,680,Narrow-body airliner
+Boeing 757-300,273000,1280,55,Narrow-body airliner
+Boeing 767-300ER,412000,1800,580,Wide-body airliner
+Boeing 767-400ER,450000,1950,38,Wide-body airliner
+Boeing 777-200ER,656000,2800,420,Wide-body airliner
+Boeing 777-300ER,775000,3200,790,Wide-body airliner
+Boeing 777X,775000,3100,30,Wide-body airliner
+Boeing 787-8,502500,2200,490,Wide-body airliner
+Boeing 787-9,553000,2350,720,Wide-body airliner
+Boeing 787-10,560000,2450,160,Wide-body airliner
+Boeing 747-400,875000,3600,320,Wide-body airliner
+Boeing 747-8,987000,3900,50,Wide-body airliner
+Airbus A319,166400,850,1400,Narrow-body airliner
+Airbus A320,169756,900,4200,Narrow-body airliner
+Airbus A321,196210,980,2100,Narrow-body airliner
+Airbus A320neo,174165,870,2000,Narrow-body airliner
+Airbus A321neo,206132,960,1200,Narrow-body airliner
+Airbus A321XLR,212000,980,10,Narrow-body airliner
+Airbus A330-200,507100,2100,600,Wide-body airliner
+Airbus A330-300,523589,2200,700,Wide-body airliner
+Airbus A330-900neo,553366,2150,120,Wide-body airliner
+Airbus A340-500,820000,3200,50,Wide-body airliner
+Airbus A340-600,840000,3400,90,Wide-body airliner
+Airbus A350-900,617300,2500,480,Wide-body airliner
+Airbus A350-1000,702000,2700,90,Wide-body airliner
+Airbus A380-800,1268000,4200,230,Wide-body airliner
+Embraer E170,82673,480,190,Regional jet
+Embraer E175,85076,500,760,Regional jet
+Embraer E190,114638,600,620,Regional jet
+Embraer E195,124341,640,160,Regional jet
+Embraer E175-E2,89286,490,80,Regional jet
+Embraer E190-E2,120370,580,60,Regional jet
+Embraer E195-E2,130734,620,50,Regional jet
+Bombardier CRJ-200,53000,350,990,Regional jet
+Bombardier CRJ-700,75000,430,510,Regional jet
+Bombardier CRJ-900,84500,470,560,Regional jet
+Bombardier CRJ-1000,91000,510,130,Regional jet
+Bombardier C Series CS100,135580,650,50,Narrow-body airliner
+Bombardier C Series CS300,149914,700,80,Narrow-body airliner
+Airbus A220-100,135580,650,140,Narrow-body airliner
+Airbus A220-300,149914,700,260,Narrow-body airliner
+ATR 42-600S,41226,290,20,Turboprop regional
+Fokker 50,45194,300,170,Turboprop regional
+Fokker 70,82673,480,50,Regional jet
+Fokker 100,95900,540,120,Regional jet
+BAe 146-200,93000,560,100,Regional jet
+Avro RJ85,97000,570,90,Regional jet
+Avro RJ100,101413,590,60,Regional jet
+Sukhoi Superjet 100,101900,580,280,Regional jet
+COMAC ARJ21,88185,520,110,Regional jet
+COMAC C919,187393,920,30,Narrow-body airliner
+Boeing C-17 Globemaster III,585000,2800,270,Military transport
+Boeing C-40 Clipper,171000,900,17,Military transport
+Boeing VC-25 (Air Force One),833000,3600,2,Military transport
+Boeing E-3 Sentry,325000,1600,32,Military transport
+Boeing E-8 JSTARS,336000,1650,16,Military transport
+Boeing P-8 Poseidon,189200,950,130,Military transport
+Lockheed C-130H Hercules,175000,1050,500,Military transport
+Lockheed C-130J Super Hercules,175000,1000,400,Military transport
+Lockheed C-5M Super Galaxy,840000,3900,52,Military transport
+Lockheed C-141 Starlifter,344000,1800,10,Military transport
+Lockheed P-3 Orion,142000,850,200,Military transport
+Airbus A400M Atlas,310850,1400,110,Military transport
+Airbus C295,53790,320,230,Military transport
+CASA CN-235,36376,240,180,Military transport
+CASA C-212 Aviocar,18078,150,300,Military transport
+Alenia C-27J Spartan,70548,420,75,Military transport
+Antonov An-12,134480,900,150,Military transport
+Antonov An-26,52910,380,220,Military transport
+Antonov An-32,59524,400,100,Military transport
+Antonov An-72,76059,480,60,Military transport
+Antonov An-124 Ruslan,892872,4200,26,Military transport
+Antonov An-225 Mriya,1323160,6000,1,Military transport
+Ilyushin Il-76,374786,2000,220,Military transport
+Boeing KC-135 Stratotanker,322500,1600,390,Military transport
+Boeing KC-46 Pegasus,415000,1900,68,Military transport
+Airbus A330 MRTT,513678,2100,60,Military transport
+McDonnell Douglas C-9 Nightingale,121000,700,20,Military transport
+Dornier 328JET,31000,280,80,Regional jet
+
