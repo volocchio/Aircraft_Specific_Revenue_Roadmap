@@ -465,7 +465,7 @@ with tab_finance:
     # Assume revenue ramps over 3 years post-STC, then steady state
     _rev_ramp_years = 3
     _rev_periods = pd.date_range(
-        start=program_end_date, periods=_rev_ramp_years * 4 + 1, freq="QE"
+        start=program_end_date, periods=_rev_ramp_years * 4 + 1, freq="QS"
     )
     _total_rev_quarters = len(_rev_periods) - 1
     # Ramp: units sold distributed as 10%, 20%, 30%, 40% over 4 quarters per year
@@ -556,10 +556,10 @@ with tab_finance:
 
     # Build quarterly time series
     _prog_quarters = pd.date_range(
-        start=program_start_date, end=program_end_date, freq="QE"
+        start=program_start_date, end=program_end_date, freq="QS"
     )
     if len(_prog_quarters) == 0:
-        _prog_quarters = pd.date_range(start=program_start_date, periods=2, freq="QE")
+        _prog_quarters = pd.date_range(start=program_start_date, periods=2, freq="QS")
 
     _n_prog_q = len(_prog_quarters)
     _spend_per_q = all_in_cost_usd / _n_prog_q
@@ -596,7 +596,8 @@ with tab_finance:
         alt.Chart(_cf_ts_df)
         .mark_area(opacity=0.3)
         .encode(
-            x=alt.X("Quarter:T", title="Quarter"),
+            x=alt.X("Quarter:T", title="Quarter",
+                     axis=alt.Axis(tickCount={"interval": "month", "step": 3}, format="%b %Y", labelAngle=-45)),
             y=alt.Y("Cumulative Cash Flow ($M):Q", title="Cumulative Cash Flow ($M)"),
             color=alt.Color("Phase:N", legend=alt.Legend(title="")),
         )
@@ -605,7 +606,8 @@ with tab_finance:
         alt.Chart(_cf_ts_df)
         .mark_line(point=True)
         .encode(
-            x=alt.X("Quarter:T"),
+            x=alt.X("Quarter:T",
+                     axis=alt.Axis(tickCount={"interval": "month", "step": 3}, format="%b %Y", labelAngle=-45)),
             y=alt.Y("Cumulative Cash Flow ($M):Q"),
             color=alt.Color("Phase:N"),
             tooltip=[
