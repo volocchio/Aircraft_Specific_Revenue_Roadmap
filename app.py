@@ -5,12 +5,13 @@ import altair as alt
 import numpy as np
 import pandas as pd
 import streamlit as st
+import vl_convert as vlc
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import letter
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.units import inch
 from reportlab.platypus import (
-    Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+    Image as RLImage, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 )
 
 
@@ -58,7 +59,12 @@ def build_export_table(summary: dict) -> pd.DataFrame:
     )
 
 
-def build_pdf(summary: dict, aircraft: str, program_start: str, program_end: str) -> bytes:
+def chart_to_png(chart: alt.Chart, width: int = 600, height: int = 300) -> bytes:
+    return vlc.vegalite_to_png(chart.to_dict(), scale=1.5, vl_version="5.21")
+
+
+def build_pdf(summary: dict, aircraft: str, program_start: str, program_end: str,
+             chart_pngs: list[tuple[str, bytes]] | None = None) -> bytes:
     buf = io.BytesIO()
     doc = SimpleDocTemplate(
         buf, pagesize=letter,
@@ -104,6 +110,14 @@ def build_pdf(summary: dict, aircraft: str, program_start: str, program_end: str
     t = Table(rows, colWidths=col_w, repeatRows=1)
     t.setStyle(tbl_style)
     story.append(t)
+
+    if chart_pngs:
+        for _title, _png in chart_pngs:
+            story.append(Spacer(1, 0.2*inch))
+            story.append(Paragraph(_title, section_style))
+            _img_buf = io.BytesIO(_png)
+            _rl_img = RLImage(_img_buf, width=6.5*inch, height=3.25*inch)
+            story.append(_rl_img)
 
     doc.build(story)
     return buf.getvalue()
@@ -342,7 +356,32 @@ net_revenue_usd = gross_revenue_usd - cogs_total_usd - royalties_usd - float(lic
 roi_multiple = net_revenue_usd / all_in_cost_usd if all_in_cost_usd > 0 else 0.0
 addressable_revenue_usd = gross_revenue_usd
 
-tab_results, tab_finance, tab_schedule = st.tabs(["Results", "Financial Statements", "Schedule"])
+# Build NRE chart here so it's available for PDF generation (col1 runs before col2)
+_x_grid = np.logspace(np.log10(5000.0), np.log10(cal_df["mtow_lbs"].max() * 1.1), 200)
+_y_grid = np.array([predict_power_law(float(x), a, b) for x in _x_grid])
+_fit_df  = pd.DataFrame({"mtow_lbs": _x_grid, "total_nre_usd_m": _y_grid, "series": "fit"})
+_pts_df  = cal_df.assign(series="calibration")
+_cur_df  = pd.DataFrame({"mtow_lbs": [float(mtow_lbs)], "total_nre_usd_m": [float(base_nre_usd_m)], "series": ["selected"]})
+_plot_df = pd.concat([_fit_df, _pts_df, _cur_df], ignore_index=True)
+_nre_line = (
+    alt.Chart(_plot_df[_plot_df["series"] == "fit"]).mark_line()
+    .encode(
+        x=alt.X("mtow_lbs:Q", title="MTOW (lbs)", scale=alt.Scale(type="log")),
+        y=alt.Y("total_nre_usd_m:Q", title="Total NRE (USD M)", scale=alt.Scale(type="log")),
+    )
+)
+_nre_points = (
+    alt.Chart(_plot_df[_plot_df["series"] != "fit"]).mark_point(filled=True, size=120)
+    .encode(
+        x=alt.X("mtow_lbs:Q", scale=alt.Scale(type="log")),
+        y=alt.Y("total_nre_usd_m:Q", scale=alt.Scale(type="log")),
+        color=alt.Color("series:N", legend=alt.Legend(title="")),
+        tooltip=["series:N", "mtow_lbs:Q", "total_nre_usd_m:Q"],
+    )
+)
+_nre_chart = (_nre_line + _nre_points).properties(width=500, height=300)
+
+tab_results, tab_finance, tab_sensitivity, tab_schedule = st.tabs(["Results", "Financial Statements", "Sensitivity", "Schedule"])
 
 col1, col2 = tab_results.columns([1.2, 1])
 
@@ -364,6 +403,15 @@ with col1:
     pl_col1.metric("Gross revenue", f"${gross_revenue_usd/1e6:,.1f}M")
     pl_col2.metric("Net revenue", f"${net_revenue_usd/1e6:,.1f}M")
     pl_col3.metric("Net revenue / Investment", f"{roi_multiple:.1f}x")
+
+    st.subheader("Break-Even")
+    _margin_per_unit = float(kit_price_usd) - float(cogs_per_unit_usd) - float(kit_price_usd) * (float(royalty_pct) / 100.0)
+    _be_units = (all_in_cost_usd + float(license_fee_usd)) / _margin_per_unit if _margin_per_unit > 0 else float("inf")
+    _be_pct = (_be_units / float(fleet_size) * 100.0) if float(fleet_size) > 0 else float("inf")
+    be_col1, be_col2, be_col3 = st.columns(3)
+    be_col1.metric("Break-even units", f"{_be_units:,.0f}" if _be_units < 1e6 else "N/A")
+    be_col2.metric("Break-even penetration", f"{_be_pct:.1f}%" if _be_pct < 200 else "N/A")
+    be_col3.metric("Margin per unit", f"${_margin_per_unit/1e6:,.2f}M")
 
     st.subheader("Program Summary")
 
@@ -397,11 +445,17 @@ with col1:
 
     st.dataframe(build_display_table(summary), use_container_width=True, hide_index=True)
 
+    try:
+        _nre_png = chart_to_png(_nre_chart)
+        _pdf_chart_pngs = [("MTOW vs Total NRE", _nre_png)]
+    except Exception:
+        _pdf_chart_pngs = None
     _pdf_bytes = build_pdf(
         summary,
         aircraft=selected_aircraft,
         program_start=program_start_date.strftime("%b %Y"),
         program_end=program_end_date.strftime("%b %Y"),
+        chart_pngs=_pdf_chart_pngs,
     )
     st.download_button(
         "Download PDF",
@@ -412,47 +466,7 @@ with col1:
 
 with col2:
     st.subheader("MTOW vs Total NRE (log-log)")
-
-    x_grid = np.logspace(
-        np.log10(5000.0),
-        np.log10(cal_df["mtow_lbs"].max() * 1.1),
-        200,
-    )
-    y_grid = np.array([predict_power_law(float(x), a, b) for x in x_grid])
-
-    fit_df = pd.DataFrame({"mtow_lbs": x_grid, "total_nre_usd_m": y_grid, "series": "fit"})
-    pts_df = cal_df.assign(series="calibration")
-    cur_df = pd.DataFrame(
-        {
-            "mtow_lbs": [float(mtow_lbs)],
-            "total_nre_usd_m": [float(base_nre_usd_m)],
-            "series": ["selected"],
-        }
-    )
-
-    plot_df = pd.concat([fit_df, pts_df, cur_df], ignore_index=True)
-
-    line = (
-        alt.Chart(plot_df[plot_df["series"] == "fit"])
-        .mark_line()
-        .encode(
-            x=alt.X("mtow_lbs:Q", title="MTOW (lbs)", scale=alt.Scale(type="log")),
-            y=alt.Y("total_nre_usd_m:Q", title="Total NRE (USD M)", scale=alt.Scale(type="log")),
-        )
-    )
-
-    points = (
-        alt.Chart(plot_df[plot_df["series"] != "fit"])
-        .mark_point(filled=True, size=120)
-        .encode(
-            x=alt.X("mtow_lbs:Q", scale=alt.Scale(type="log")),
-            y=alt.Y("total_nre_usd_m:Q", scale=alt.Scale(type="log")),
-            color=alt.Color("series:N", legend=alt.Legend(title="")),
-            tooltip=["series:N", "mtow_lbs:Q", "total_nre_usd_m:Q"],
-        )
-    )
-
-    st.altair_chart((line + points).interactive(), use_container_width=True)
+    st.altair_chart(_nre_chart.interactive(), use_container_width=True)
 
 tab_results.caption("Calibration points and aircraft list can be edited in the data/ folder.")
 
@@ -592,6 +606,10 @@ with tab_finance:
         "y": [0, 0],
     })
 
+    _cf_color_scale = alt.Scale(
+        domain=["Investment", "Revenue"],
+        range=["#d62728", "#2ca02c"],
+    )
     _area = (
         alt.Chart(_cf_ts_df)
         .mark_area(opacity=0.3)
@@ -599,7 +617,7 @@ with tab_finance:
             x=alt.X("Quarter:T", title="Quarter",
                      axis=alt.Axis(tickCount={"interval": "month", "step": 3}, format="%b %Y", labelAngle=-45)),
             y=alt.Y("Cumulative Cash Flow ($M):Q", title="Cumulative Cash Flow ($M)"),
-            color=alt.Color("Phase:N", legend=alt.Legend(title="")),
+            color=alt.Color("Phase:N", scale=_cf_color_scale, legend=alt.Legend(title="")),
         )
     )
     _line = (
@@ -609,7 +627,7 @@ with tab_finance:
             x=alt.X("Quarter:T",
                      axis=alt.Axis(tickCount={"interval": "month", "step": 3}, format="%b %Y", labelAngle=-45)),
             y=alt.Y("Cumulative Cash Flow ($M):Q"),
-            color=alt.Color("Phase:N"),
+            color=alt.Color("Phase:N", scale=_cf_color_scale),
             tooltip=[
                 alt.Tooltip("Quarter_label:N", title="Quarter"),
                 alt.Tooltip("Cumulative Cash Flow ($M):Q", title="Cum. CF ($M)", format=".1f"),
@@ -627,6 +645,139 @@ with tab_finance:
         f"Investment phase: **{program_start_quarter} {int(program_start_year)}** → "
         f"**{program_end_date.strftime('%b %Y')}**. "
         f"Revenue ramp: {_rev_ramp_years} years post-STC."
+    )
+
+with tab_sensitivity:
+    st.subheader("Sensitivity Analysis — Impact on Net Revenue / Investment")
+    st.caption("Each bar shows the ROI multiple when that input is varied ±20% from current value, holding all others constant.")
+
+    def _calc_roi(
+        mtow=None, eng_rate=None, mkt_pen=None, kit_price=None,
+        cogs_pu=None, schedule=None, royalty=None,
+    ):
+        _mtow     = float(mtow      or mtow_lbs)
+        _rate     = float(eng_rate  or eng_rate_usd_per_hr)
+        _pen      = float(mkt_pen   or market_penetration_pct)
+        _kp       = float(kit_price or kit_price_usd)
+        _cogs     = float(cogs_pu   or cogs_per_unit_usd)
+        _sched    = float(schedule  or schedule_months)
+        _roy      = float(royalty   or royalty_pct)
+
+        _rs       = _rate / 175.0
+        _snre     = cal_df["total_nre_usd_m"].to_numpy() * _rs
+        _a, _b    = fit_power_law(cal_df["mtow_lbs"].to_numpy(), _snre)
+        _nre      = predict_power_law(_mtow, _a, _b) * 1e6
+        _prod_r   = _nre * (float(prod_readiness_pct) / 100.0)
+
+        if acquisition_mode == "Lease":
+            _acq = lease_usd_per_month * _sched
+        else:
+            _acq = float(acquisition_cost_usd)
+
+        _all_in   = _nre + _acq + float(tooling_usd) + _prod_r + float(inventory_usd) + float(flight_test_total_usd)
+        _units    = float(fleet_size) * (_pen / 100.0)
+        _gross    = _units * _kp
+        _cogs_t   = _units * _cogs
+        _roy_t    = _gross * (_roy / 100.0)
+        _net      = _gross - _cogs_t - _roy_t - float(license_fee_usd)
+        return _net / _all_in if _all_in > 0 else 0.0
+
+    _base_roi = roi_multiple
+    _delta = 0.20  # ±20%
+
+    _sens_params = [
+        ("Market penetration",   dict(mkt_pen=market_penetration_pct * (1 + _delta)),  dict(mkt_pen=market_penetration_pct * (1 - _delta))),
+        ("Sales price/unit",     dict(kit_price=kit_price_usd * (1 + _delta)),          dict(kit_price=kit_price_usd * (1 - _delta))),
+        ("COGS/unit",            dict(cogs_pu=cogs_per_unit_usd * (1 - _delta)),        dict(cogs_pu=cogs_per_unit_usd * (1 + _delta))),
+        ("Engineering rate",     dict(eng_rate=eng_rate_usd_per_hr * (1 - _delta)),     dict(eng_rate=eng_rate_usd_per_hr * (1 + _delta))),
+        ("Schedule months",      dict(schedule=schedule_months * (1 - _delta)),         dict(schedule=schedule_months * (1 + _delta))),
+        ("Royalty rate",         dict(royalty=royalty_pct * (1 - _delta)),               dict(royalty=royalty_pct * (1 + _delta))),
+        ("MTOW (NRE driver)",    dict(mtow=float(mtow_lbs) * (1 - _delta)),              dict(mtow=float(mtow_lbs) * (1 + _delta))),
+    ]
+
+    _tornado_rows = []
+    for _label, _hi_kwargs, _lo_kwargs in _sens_params:
+        _roi_hi = _calc_roi(**_hi_kwargs)
+        _roi_lo = _calc_roi(**_lo_kwargs)
+        _tornado_rows.append({
+            "Input": _label,
+            "ROI High": round(_roi_hi, 3),
+            "ROI Low":  round(_roi_lo, 3),
+            "Swing":    round(abs(_roi_hi - _roi_lo), 3),
+        })
+
+    _tornado_df = pd.DataFrame(_tornado_rows).sort_values("Swing", ascending=True)
+
+    _t_long = pd.concat([
+        _tornado_df[["Input", "ROI High"]].rename(columns={"ROI High": "ROI"}).assign(Scenario="+20%"),
+        _tornado_df[["Input", "ROI Low"]].rename(columns={"ROI Low": "ROI"}).assign(Scenario="-20%"),
+    ])
+
+    _base_line = pd.DataFrame({"x": [_base_roi, _base_roi], "y_start": [0, len(_tornado_df)]})
+
+    _tornado_chart = (
+        alt.Chart(_t_long)
+        .mark_bar(opacity=0.8)
+        .encode(
+            y=alt.Y("Input:N", sort=list(_tornado_df["Input"]), title="", axis=alt.Axis(labelLimit=200)),
+            x=alt.X("ROI:Q", title="Net Revenue / Investment (x)", axis=alt.Axis(format=".1f")),
+            color=alt.Color("Scenario:N", scale=alt.Scale(domain=["+20%", "-20%"], range=["#2ca02c", "#d62728"])),
+            tooltip=[
+                alt.Tooltip("Input:N"),
+                alt.Tooltip("Scenario:N"),
+                alt.Tooltip("ROI:Q", title="ROI multiple", format=".2f"),
+            ],
+        )
+    )
+
+    _base_rule = (
+        alt.Chart(pd.DataFrame({"x": [_base_roi]}))
+        .mark_rule(color="black", strokeDash=[4, 4], strokeWidth=2)
+        .encode(x=alt.X("x:Q"))
+    )
+
+    st.altair_chart(
+        (_tornado_chart + _base_rule).properties(height=350).interactive(),
+        use_container_width=True,
+    )
+
+    st.caption(f"Dashed line = base case ROI ({_base_roi:.2f}x). Bars show ROI at ±20% of each input.")
+
+    st.divider()
+    st.subheader("Break-Even Detail")
+    _be_data = []
+    for _pen_test in range(0, 101, 5):
+        _u = float(fleet_size) * (_pen_test / 100.0)
+        _g = _u * float(kit_price_usd)
+        _n = _g - _u * float(cogs_per_unit_usd) - _g * (float(royalty_pct)/100.0) - float(license_fee_usd)
+        _be_data.append({"Penetration (%)": _pen_test, "Cumulative Net Revenue ($M)": _n / 1e6})
+    _be_df = pd.DataFrame(_be_data)
+    _be_line = (
+        alt.Chart(_be_df)
+        .mark_line(color="#1f77b4")
+        .encode(
+            x=alt.X("Penetration (%):Q", title="Market Penetration (%)"),
+            y=alt.Y("Cumulative Net Revenue ($M):Q"),
+            tooltip=["Penetration (%):Q", alt.Tooltip("Cumulative Net Revenue ($M):Q", format=".1f")],
+        )
+    )
+    _cost_line = (
+        alt.Chart(pd.DataFrame({"y": [all_in_cost_usd / 1e6]}))
+        .mark_rule(color="#d62728", strokeDash=[4, 4])
+        .encode(y=alt.Y("y:Q", title=""))
+    )
+    _zero_rule = (
+        alt.Chart(pd.DataFrame({"y": [0]}))
+        .mark_rule(color="gray", strokeDash=[2, 2])
+        .encode(y=alt.Y("y:Q"))
+    )
+    st.altair_chart(
+        (_be_line + _cost_line + _zero_rule).properties(height=280).interactive(),
+        use_container_width=True,
+    )
+    st.caption(
+        f"Red dashed line = all-in program cost (\\${all_in_cost_usd/1e6:,.1f}M). "
+        f"Break-even at ~{_be_pct:.1f}% penetration ({_be_units:,.0f} units)."
     )
 
 with tab_schedule:
