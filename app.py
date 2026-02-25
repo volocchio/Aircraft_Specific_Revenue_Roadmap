@@ -5,7 +5,6 @@ import altair as alt
 import numpy as np
 import pandas as pd
 import streamlit as st
-import vl_convert as vlc
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import letter
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
@@ -60,7 +59,9 @@ def build_export_table(summary: dict) -> pd.DataFrame:
 
 
 def chart_to_png(chart: alt.Chart, width: int = 600, height: int = 300) -> bytes:
-    return vlc.vegalite_to_png(chart.to_dict(), scale=1.5, vl_version="5.21")
+    buf = io.BytesIO()
+    chart.save(buf, format="png", scale_factor=1.5)
+    return buf.getvalue()
 
 
 def build_pdf(summary: dict, aircraft: str, program_start: str, program_end: str,

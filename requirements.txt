@@ -2,4 +2,5 @@ streamlit==1.32.2
 pandas==2.2.1
 numpy==1.26.4
 altair==5.2.0
-openpyxl==3.1.2
+reportlab==4.2.2
+kaleido==0.2.1
