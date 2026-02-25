@@ -64,7 +64,8 @@ def chart_to_png(chart: alt.Chart, width: int = 600, height: int = 300) -> bytes
 
 
 def build_pdf(summary: dict, aircraft: str, program_start: str, program_end: str,
-             chart_pngs: list[tuple[str, bytes]] | None = None) -> bytes:
+             chart_pngs: list[tuple[str, bytes]] | None = None,
+             fin_tables: list[tuple[str, "pd.DataFrame"]] | None = None) -> bytes:
     buf = io.BytesIO()
     doc = SimpleDocTemplate(
         buf, pagesize=letter,
@@ -111,6 +112,15 @@ def build_pdf(summary: dict, aircraft: str, program_start: str, program_end: str
     t.setStyle(tbl_style)
     story.append(t)
 
+    if fin_tables:
+        for _ftitle, _fdf in fin_tables:
+            story.append(Spacer(1, 0.2*inch))
+            story.append(Paragraph(_ftitle, section_style))
+            _frows = [list(_fdf.columns)] + _fdf.values.tolist()
+            _ft = Table(_frows, colWidths=[4.5*inch, 2.0*inch], repeatRows=1)
+            _ft.setStyle(tbl_style)
+            story.append(_ft)
+
     if chart_pngs:
         for _title, _png in chart_pngs:
             story.append(Spacer(1, 0.2*inch))
@@ -133,7 +143,7 @@ def fmt_value(key: str, val) -> str:
     # unit-less counts / ratios
     if "fleet" in k:
         return f"{int(val):,}"
-    if "multiple" in k or "ratio" in k:
+    if "multiple" in k or "ratio" in k or "/ investment" in k:
         return f"{float(val):.2f}x"
     if "hours" in k:
         return f"{float(val):,.0f} hrs"
@@ -356,6 +366,124 @@ net_revenue_usd = gross_revenue_usd - cogs_total_usd - royalties_usd - float(lic
 roi_multiple = net_revenue_usd / all_in_cost_usd if all_in_cost_usd > 0 else 0.0
 addressable_revenue_usd = gross_revenue_usd
 
+# ── Financial statement data (built here so PDF can access before tabs render) ──
+_rev_ramp_years = 3
+_fin_rev_periods = pd.date_range(
+    start=program_end_date, periods=_rev_ramp_years * 4 + 1, freq="QS"
+)
+_fin_total_rev_q = len(_fin_rev_periods) - 1
+_fin_ramp_weights = [0.05, 0.10, 0.15, 0.20, 0.20, 0.15, 0.10, 0.05, 0.125, 0.125, 0.125, 0.125]
+_fin_ramp_weights = (_fin_ramp_weights + [1/_fin_total_rev_q] * max(0, _fin_total_rev_q - len(_fin_ramp_weights)))[:_fin_total_rev_q]
+_fin_wsum = sum(_fin_ramp_weights)
+_fin_ramp_weights = [w / _fin_wsum for w in _fin_ramp_weights]
+
+_gross_margin    = gross_revenue_usd - cogs_total_usd
+_ebit            = _gross_margin - royalties_usd - license_fee_usd - all_in_cost_usd
+_cf_ops          = gross_revenue_usd - cogs_total_usd - royalties_usd - license_fee_usd
+_cf_invest       = -(base_nre_usd + tooling_usd + float(flight_test_total_usd) +
+                     acquisition_cost_usd + inventory_usd + production_readiness_usd)
+_cf_net          = _cf_ops + _cf_invest
+
+_is_rows = [
+    ("Gross Revenue",            f"${gross_revenue_usd/1e6:,.1f}M"),
+    ("Cost of Goods Sold",       f"(${cogs_total_usd/1e6:,.1f}M)"),
+    ("Gross Margin",             f"${_gross_margin/1e6:,.1f}M"),
+    ("Royalties",                f"(${royalties_usd/1e6:,.1f}M)"),
+    ("License Fee",              f"(${license_fee_usd/1e6:,.1f}M)"),
+    ("Program Investment",       f"(${all_in_cost_usd/1e6:,.1f}M)"),
+    ("Net Income",               f"${_ebit/1e6:,.1f}M"),
+]
+_is_df = pd.DataFrame(_is_rows, columns=["Line Item", "Amount ($M)"])
+
+_cf_stmt_rows = [
+    ("Operating Activities", ""),
+    ("  Revenue collected",        f"${gross_revenue_usd/1e6:,.1f}M"),
+    ("  COGS paid",                f"(${cogs_total_usd/1e6:,.1f}M)"),
+    ("  Royalties paid",           f"(${royalties_usd/1e6:,.1f}M)"),
+    ("  License fee paid",         f"(${license_fee_usd/1e6:,.1f}M)"),
+    ("Net cash from operations",   f"${_cf_ops/1e6:,.1f}M"),
+    ("", ""),
+    ("Investing / Development", ""),
+    ("  Certification NRE",        f"(${base_nre_usd/1e6:,.1f}M)"),
+    ("  Production readiness",     f"(${production_readiness_usd/1e6:,.1f}M)"),
+    ("  Tooling",                  f"(${tooling_usd/1e6:,.1f}M)"),
+    ("  Flight testing",           f"(${float(flight_test_total_usd)/1e6:,.1f}M)"),
+    ("  Aircraft acquisition",     f"(${acquisition_cost_usd/1e6:,.1f}M)"),
+    ("  Inventory",                f"(${inventory_usd/1e6:,.1f}M)"),
+    ("Net cash from investing",    f"${_cf_invest/1e6:,.1f}M"),
+    ("", ""),
+    ("Net cash flow (lifetime)",   f"${_cf_net/1e6:,.1f}M"),
+]
+_cf_stmt_df = pd.DataFrame(_cf_stmt_rows, columns=["Line Item", "Amount ($M)"])
+
+_assets_cash  = max(0.0, _cf_net)
+_assets_inv   = inventory_usd
+_assets_total = _assets_cash + _assets_inv
+_liab_def     = 0.0
+_equity       = _assets_total - _liab_def
+_bs_rows = [
+    ("ASSETS", ""),
+    ("  Cash & equivalents",  f"${_assets_cash/1e6:,.1f}M"),
+    ("  Inventory",           f"${_assets_inv/1e6:,.1f}M"),
+    ("Total Assets",          f"${_assets_total/1e6:,.1f}M"),
+    ("", ""),
+    ("LIABILITIES", ""),
+    ("  Deferred obligations",f"${_liab_def/1e6:,.1f}M"),
+    ("Total Liabilities",     f"${_liab_def/1e6:,.1f}M"),
+    ("", ""),
+    ("EQUITY", ""),
+    ("Retained earnings",     f"${_equity/1e6:,.1f}M"),
+]
+_bs_df = pd.DataFrame(_bs_rows, columns=["Line Item", "Amount ($M)"])
+
+# Build CF time-series
+_prog_quarters_fin = pd.date_range(start=program_start_date, end=program_end_date, freq="QS")
+if len(_prog_quarters_fin) == 0:
+    _prog_quarters_fin = pd.date_range(start=program_start_date, periods=2, freq="QS")
+_spend_per_q_fin = all_in_cost_usd / len(_prog_quarters_fin)
+_cf_ts_rows = []
+_cum_fin = 0.0
+for _q in _prog_quarters_fin:
+    _cum_fin -= _spend_per_q_fin
+    _cf_ts_rows.append({"Quarter": _q, "Cumulative Cash Flow ($M)": _cum_fin / 1e6, "Phase": "Investment"})
+_cum_fin += float(resale_value_usd)
+for _i, _q in enumerate(_fin_rev_periods[1:]):
+    _q_rev = gross_revenue_usd * _fin_ramp_weights[_i]
+    _q_cogs = cogs_total_usd * _fin_ramp_weights[_i]
+    _q_roy = royalties_usd * _fin_ramp_weights[_i]
+    _q_lic = license_fee_usd if _i == 0 else 0.0
+    _cum_fin += (_q_rev - _q_cogs - _q_roy - _q_lic)
+    _cf_ts_rows.append({"Quarter": _q, "Cumulative Cash Flow ($M)": _cum_fin / 1e6, "Phase": "Revenue"})
+_cf_ts_df = pd.DataFrame(_cf_ts_rows)
+_cf_ts_df["Quarter_label"] = _cf_ts_df["Quarter"].dt.strftime("%b %Y")
+_zero_line_cf = pd.DataFrame({"Quarter": [_cf_ts_df["Quarter"].min(), _cf_ts_df["Quarter"].max()], "y": [0, 0]})
+_cf_color_scale = alt.Scale(domain=["Investment", "Revenue"], range=["#d62728", "#2ca02c"])
+_cf_area = (
+    alt.Chart(_cf_ts_df).mark_area(opacity=0.3)
+    .encode(
+        x=alt.X("Quarter:T", title="Quarter",
+                axis=alt.Axis(tickCount={"interval": "month", "step": 3}, format="%b %Y", labelAngle=-45)),
+        y=alt.Y("Cumulative Cash Flow ($M):Q", title="Cumulative Cash Flow ($M)"),
+        color=alt.Color("Phase:N", scale=_cf_color_scale, legend=alt.Legend(title="")),
+    )
+)
+_cf_line = (
+    alt.Chart(_cf_ts_df).mark_line(point=True)
+    .encode(
+        x=alt.X("Quarter:T",
+                axis=alt.Axis(tickCount={"interval": "month", "step": 3}, format="%b %Y", labelAngle=-45)),
+        y=alt.Y("Cumulative Cash Flow ($M):Q"),
+        color=alt.Color("Phase:N", scale=_cf_color_scale),
+        tooltip=[
+            alt.Tooltip("Quarter_label:N", title="Quarter"),
+            alt.Tooltip("Cumulative Cash Flow ($M):Q", title="Cum. CF ($M)", format=".1f"),
+            alt.Tooltip("Phase:N", title="Phase"),
+        ],
+    )
+)
+_cf_zero = alt.Chart(_zero_line_cf).mark_rule(color="gray", strokeDash=[4, 4]).encode(y=alt.Y("y:Q"))
+_cf_chart = (_cf_area + _cf_line + _cf_zero).properties(width=600, height=300)
+
 # Build NRE chart here so it's available for PDF generation (col1 runs before col2)
 _x_grid = np.logspace(np.log10(5000.0), np.log10(cal_df["mtow_lbs"].max() * 1.1), 200)
 _y_grid = np.array([predict_power_law(float(x), a, b) for x in _x_grid])
@@ -447,7 +575,11 @@ with col1:
 
     try:
         _nre_png = chart_to_png(_nre_chart)
-        _pdf_chart_pngs = [("MTOW vs Total NRE", _nre_png)]
+        _cf_png  = chart_to_png(_cf_chart)
+        _pdf_chart_pngs = [
+            ("MTOW vs Total NRE", _nre_png),
+            ("Cumulative Cash Flow", _cf_png),
+        ]
     except Exception:
         _pdf_chart_pngs = None
     _pdf_bytes = build_pdf(
@@ -456,6 +588,11 @@ with col1:
         program_start=program_start_date.strftime("%b %Y"),
         program_end=program_end_date.strftime("%b %Y"),
         chart_pngs=_pdf_chart_pngs,
+        fin_tables=[
+            ("Income Statement (Program Lifetime)", _is_df),
+            ("Cash Flow Statement (Program Lifetime)", _cf_stmt_df),
+            ("Balance Sheet (at Program Completion)", _bs_df),
+        ],
     )
     st.download_button(
         "Download PDF",
@@ -472,179 +609,20 @@ tab_results.caption("Calibration points and aircraft list can be edited in the d
 
 with tab_finance:
     st.subheader(f"Financial Statements — {program_start_quarter} {int(program_start_year)}")
-
-    # ── Timeline ──────────────────────────────────────────────────────────────
-    # Phase 1: Program (investment spend, zero revenue)
-    # Phase 2: Revenue ramp starting at STC issuance (program_end_date)
-    # Assume revenue ramps over 3 years post-STC, then steady state
-    _rev_ramp_years = 3
-    _rev_periods = pd.date_range(
-        start=program_end_date, periods=_rev_ramp_years * 4 + 1, freq="QS"
-    )
-    _total_rev_quarters = len(_rev_periods) - 1
-    # Ramp: units sold distributed as 10%, 20%, 30%, 40% over 4 quarters per year
-    _ramp_weights = [0.05, 0.10, 0.15, 0.20, 0.20, 0.15, 0.10, 0.05,
-                     0.125, 0.125, 0.125, 0.125]
-    _ramp_weights = (_ramp_weights + [1/_total_rev_quarters] *
-                     max(0, _total_rev_quarters - len(_ramp_weights)))
-    _ramp_weights = _ramp_weights[:_total_rev_quarters]
-    _wsum = sum(_ramp_weights)
-    _ramp_weights = [w / _wsum for w in _ramp_weights]
-
-    # ── Income Statement ──────────────────────────────────────────────────────
     st.markdown("### Income Statement (Program Lifetime, $M)")
-    _gross_margin = gross_revenue_usd - cogs_total_usd
-    _ebit = _gross_margin - royalties_usd - license_fee_usd - all_in_cost_usd
-    _is_rows = [
-        ("Gross Revenue",            f"${gross_revenue_usd/1e6:,.1f}M"),
-        ("Cost of Goods Sold",       f"(${cogs_total_usd/1e6:,.1f}M)"),
-        ("Gross Margin",             f"${_gross_margin/1e6:,.1f}M"),
-        ("Royalties",                f"(${royalties_usd/1e6:,.1f}M)"),
-        ("License Fee",              f"(${license_fee_usd/1e6:,.1f}M)"),
-        ("Program Investment (NRE + Readiness + Tooling + Test + Acquisition + Inventory)",
-                                     f"(${all_in_cost_usd/1e6:,.1f}M)"),
-        ("**Net Income**",           f"**${_ebit/1e6:,.1f}M**"),
-    ]
-    is_df = pd.DataFrame(_is_rows, columns=["Line Item", "Amount ($M)"])
-    st.dataframe(is_df, use_container_width=True, hide_index=True)
-
+    st.dataframe(_is_df, use_container_width=True, hide_index=True)
     st.divider()
-
-    # ── Cash Flow Statement ───────────────────────────────────────────────────
     st.markdown("### Cash Flow Statement (Program Lifetime, $M)")
-    _cf_ops = gross_revenue_usd - cogs_total_usd - royalties_usd - license_fee_usd
-    _cf_invest = -(base_nre_usd + tooling_usd + float(flight_test_total_usd) +
-                   acquisition_cost_usd + inventory_usd + production_readiness_usd)
-    _cf_net = _cf_ops + _cf_invest
-    _cf_rows = [
-        ("Operating Activities", ""),
-        ("  Revenue collected",        f"${gross_revenue_usd/1e6:,.1f}M"),
-        ("  COGS paid",                f"(${cogs_total_usd/1e6:,.1f}M)"),
-        ("  Royalties paid",           f"(${royalties_usd/1e6:,.1f}M)"),
-        ("  License fee paid",         f"(${license_fee_usd/1e6:,.1f}M)"),
-        ("**Net cash from operations**", f"**${_cf_ops/1e6:,.1f}M**"),
-        ("", ""),
-        ("Investing / Development Activities", ""),
-        ("  Certification NRE",        f"(${base_nre_usd/1e6:,.1f}M)"),
-        ("  Production readiness",     f"(${production_readiness_usd/1e6:,.1f}M)"),
-        ("  Tooling",                  f"(${tooling_usd/1e6:,.1f}M)"),
-        ("  Flight testing",           f"(${float(flight_test_total_usd)/1e6:,.1f}M)"),
-        ("  Aircraft acquisition",     f"(${acquisition_cost_usd/1e6:,.1f}M)"),
-        ("  Inventory",                f"(${inventory_usd/1e6:,.1f}M)"),
-        ("**Net cash from investing**", f"**${_cf_invest/1e6:,.1f}M**"),
-        ("", ""),
-        ("**Net cash flow (lifetime)**", f"**${_cf_net/1e6:,.1f}M**"),
-    ]
-    cf_df = pd.DataFrame(_cf_rows, columns=["Line Item", "Amount ($M)"])
-    st.dataframe(cf_df, use_container_width=True, hide_index=True)
-
+    st.dataframe(_cf_stmt_df, use_container_width=True, hide_index=True)
     st.divider()
-
-    # ── Balance Sheet ─────────────────────────────────────────────────────────
     st.markdown("### Balance Sheet (at Program Completion, $M)")
-    _assets_cash = max(0.0, _cf_net)
-    _assets_inv = inventory_usd
-    _assets_total = _assets_cash + _assets_inv
-    _liab_deferred = 0.0
-    _equity = _assets_total - _liab_deferred
-    _bs_rows = [
-        ("**ASSETS**", ""),
-        ("  Cash & equivalents",       f"${_assets_cash/1e6:,.1f}M"),
-        ("  Inventory",                f"${_assets_inv/1e6:,.1f}M"),
-        ("**Total Assets**",           f"**${_assets_total/1e6:,.1f}M**"),
-        ("", ""),
-        ("**LIABILITIES**", ""),
-        ("  Deferred obligations",     f"${_liab_deferred/1e6:,.1f}M"),
-        ("**Total Liabilities**",      f"**${_liab_deferred/1e6:,.1f}M**"),
-        ("", ""),
-        ("**EQUITY**", ""),
-        ("**Retained earnings**",      f"**${_equity/1e6:,.1f}M**"),
-    ]
-    bs_df = pd.DataFrame(_bs_rows, columns=["Line Item", "Amount ($M)"])
-    st.dataframe(bs_df, use_container_width=True, hide_index=True)
-
+    st.dataframe(_bs_df, use_container_width=True, hide_index=True)
     st.divider()
-
-    # ── Cumulative Cash Flow Chart ────────────────────────────────────────────
     st.markdown("### Cumulative Cash Flow Over Time ($M)")
-
-    # Build quarterly time series
-    _prog_quarters = pd.date_range(
-        start=program_start_date, end=program_end_date, freq="QS"
-    )
-    if len(_prog_quarters) == 0:
-        _prog_quarters = pd.date_range(start=program_start_date, periods=2, freq="QS")
-
-    _n_prog_q = len(_prog_quarters)
-    _spend_per_q = all_in_cost_usd / _n_prog_q
-
-    _cf_rows_ts = []
-    _cum = 0.0
-    for _q in _prog_quarters:
-        _cum -= _spend_per_q
-        _cf_rows_ts.append({"Quarter": _q, "Cumulative Cash Flow ($M)": _cum / 1e6,
-                             "Phase": "Investment"})
-
-    # At STC completion: aircraft sold (Purchase) or lease ends — recover resale value
-    _cum += float(resale_value_usd)
-
-    # Revenue phase
-    for _i, _q in enumerate(_rev_periods[1:]):
-        _q_rev = gross_revenue_usd * _ramp_weights[_i]
-        _q_cogs = cogs_total_usd * _ramp_weights[_i]
-        _q_roy = royalties_usd * _ramp_weights[_i]
-        _q_lic = license_fee_usd if _i == 0 else 0.0
-        _cum += (_q_rev - _q_cogs - _q_roy - _q_lic)
-        _cf_rows_ts.append({"Quarter": _q, "Cumulative Cash Flow ($M)": _cum / 1e6,
-                             "Phase": "Revenue"})
-
-    _cf_ts_df = pd.DataFrame(_cf_rows_ts)
-    _cf_ts_df["Quarter_label"] = _cf_ts_df["Quarter"].dt.strftime("%b %Y")
-
-    _zero_line = pd.DataFrame({
-        "Quarter": [_cf_ts_df["Quarter"].min(), _cf_ts_df["Quarter"].max()],
-        "y": [0, 0],
-    })
-
-    _cf_color_scale = alt.Scale(
-        domain=["Investment", "Revenue"],
-        range=["#d62728", "#2ca02c"],
-    )
-    _area = (
-        alt.Chart(_cf_ts_df)
-        .mark_area(opacity=0.3)
-        .encode(
-            x=alt.X("Quarter:T", title="Quarter",
-                     axis=alt.Axis(tickCount={"interval": "month", "step": 3}, format="%b %Y", labelAngle=-45)),
-            y=alt.Y("Cumulative Cash Flow ($M):Q", title="Cumulative Cash Flow ($M)"),
-            color=alt.Color("Phase:N", scale=_cf_color_scale, legend=alt.Legend(title="")),
-        )
-    )
-    _line = (
-        alt.Chart(_cf_ts_df)
-        .mark_line(point=True)
-        .encode(
-            x=alt.X("Quarter:T",
-                     axis=alt.Axis(tickCount={"interval": "month", "step": 3}, format="%b %Y", labelAngle=-45)),
-            y=alt.Y("Cumulative Cash Flow ($M):Q"),
-            color=alt.Color("Phase:N", scale=_cf_color_scale),
-            tooltip=[
-                alt.Tooltip("Quarter_label:N", title="Quarter"),
-                alt.Tooltip("Cumulative Cash Flow ($M):Q", title="Cum. CF ($M)", format=".1f"),
-                alt.Tooltip("Phase:N", title="Phase"),
-            ],
-        )
-    )
-    _zero = (
-        alt.Chart(_zero_line)
-        .mark_rule(color="gray", strokeDash=[4, 4])
-        .encode(y=alt.Y("y:Q"))
-    )
-    st.altair_chart((_area + _line + _zero).interactive(), use_container_width=True)
+    st.altair_chart(_cf_chart.interactive(), use_container_width=True)
     st.caption(
-        f"Investment phase: **{program_start_quarter} {int(program_start_year)}** → "
-        f"**{program_end_date.strftime('%b %Y')}**. "
-        f"Revenue ramp: {_rev_ramp_years} years post-STC."
+        f"Investment phase: {program_start_quarter} {int(program_start_year)} → "
+        f"{program_end_date.strftime('%b %Y')}. Revenue ramp: {_rev_ramp_years} years post-STC."
     )
 
 with tab_sensitivity:
