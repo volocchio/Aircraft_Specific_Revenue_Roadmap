@@ -113,8 +113,8 @@ def fmt_value(key: str, val) -> str:
     if val is None:
         return ""
     k = str(key).lower()
-    # plain text fields
-    if "aircraft" in k and "market" not in k:
+    # plain text fields — only the aircraft name row, not cost rows
+    if "aircraft" in k and "market" not in k and "usd" not in k and "cost" not in k and "acquisition" not in k:
         return str(val)
     # unit-less counts / ratios
     if "fleet" in k:
@@ -198,10 +198,7 @@ with st.sidebar:
     _q_month = {"Q1": 1, "Q2": 4, "Q3": 7, "Q4": 10}[program_start_quarter]
     program_start_date = pd.Timestamp(year=int(program_start_year), month=_q_month, day=1)
     program_end_date = program_start_date + pd.DateOffset(months=int(schedule_months))
-    st.caption(
-        f"Program: **{program_start_date.strftime('%b %Y')}** \u2192 **{program_end_date.strftime('%b %Y')}** "
-        f"({int(schedule_months)} mo)"
-    )
+    st.caption(f"Program: {program_start_date.strftime('%b %Y')} → {program_end_date.strftime('%b %Y')} ({int(schedule_months)} mo)")
 
     st.subheader("Aircraft acquisition")
     acquisition_mode = st.selectbox("Mode", options=["Lease", "Purchase"], index=0)
@@ -219,10 +216,7 @@ with st.sidebar:
         # Lease runs for schedule_months only — ends at STC issuance
         acquisition_cost_usd = lease_usd_per_month * schedule_months
         resale_value_usd = 0.0
-        st.caption(
-            f"**${lease_usd_per_month:,.0f}**/mo × {int(schedule_months)} mo = "
-            f"**${acquisition_cost_usd/1e6:,.1f}M** total lease cost"
-        )
+        st.caption(f"${lease_usd_per_month:,.0f}/mo × {int(schedule_months)} mo = ${acquisition_cost_usd/1e6:,.1f}M total lease cost")
     else:
         purchase_price_usd = st.number_input(
             "Purchase price ($M)", min_value=0.0, value=round(hull_value_default/1e6, 2), step=0.25, format="%.2f"
@@ -230,10 +224,7 @@ with st.sidebar:
         resale_fraction = st.slider("Resale value at STC (% of purchase)", min_value=0.0, max_value=1.0, value=0.9, format="%.2f")
         resale_value_usd = float(purchase_price_usd) * float(resale_fraction)
         acquisition_cost_usd = float(purchase_price_usd) - float(resale_value_usd)
-        st.caption(
-            f"Purchase **${purchase_price_usd/1e6:,.1f}M** − resale **${resale_value_usd/1e6:,.1f}M** = "
-            f"net cost **${acquisition_cost_usd/1e6:,.1f}M**"
-        )
+        st.caption(f"Purchase ${purchase_price_usd/1e6:,.1f}M − resale ${resale_value_usd/1e6:,.1f}M = net cost ${acquisition_cost_usd/1e6:,.1f}M")
 
     st.subheader("Engineering")
     eng_rate_usd_per_hr = st.slider(
@@ -289,10 +280,7 @@ with st.sidebar:
     flight_test_crew_usd = total_flight_test_hrs * crew_cost_per_hr
     flight_test_total_usd = flight_test_fuel_usd + flight_test_crew_usd
 
-    st.caption(
-        f"Est. flight test cost: **${flight_test_total_usd:,.0f}** "
-        f"({total_flight_test_hrs:.0f} hrs total)"
-    )
+    st.caption(f"Est. flight test cost: ${flight_test_total_usd:,.0f} ({total_flight_test_hrs:.0f} hrs total)")
 
     st.subheader("Market")
     kit_price_usd = st.number_input(
@@ -324,10 +312,7 @@ with st.sidebar:
     )
     _tam = fleet_size * kit_price_usd
     _gross = fleet_size * (market_penetration_pct / 100.0) * kit_price_usd
-    st.caption(
-        f"TAM: **${_tam/1e6:,.1f}M**  ·  "
-        f"Gross revenue @ {market_penetration_pct}%: **${_gross/1e6:,.1f}M**"
-    )
+    st.caption(f"TAM: ${_tam/1e6:,.1f}M  ·  Gross revenue @ {market_penetration_pct}%: ${_gross/1e6:,.1f}M")
 
 
 cal_df = load_calibration("data/nre_calibration.csv")
@@ -342,7 +327,7 @@ base_nre_usd = base_nre_usd_m * 1_000_000.0
 production_readiness_usd = base_nre_usd * (float(prod_readiness_pct) / 100.0)
 # Surface readiness value back into sidebar as a caption
 with st.sidebar:
-    st.caption(f"Production readiness: **${production_readiness_usd/1e6:,.1f}M** ({prod_readiness_pct}% of ${base_nre_usd/1e6:,.1f}M NRE)")
+    st.caption(f"Production readiness: ${production_readiness_usd/1e6:,.1f}M ({prod_readiness_pct}% of ${base_nre_usd/1e6:,.1f}M NRE)")
 
 all_in_cost_usd = base_nre_usd + float(acquisition_cost_usd) + float(tooling_usd) + float(
     production_readiness_usd
