@@ -58,10 +58,13 @@ def build_export_table(summary: dict) -> pd.DataFrame:
     )
 
 
-def chart_to_png(chart: alt.Chart, width: int = 600, height: int = 300) -> bytes:
-    buf = io.BytesIO()
-    chart.save(buf, format="png", scale_factor=1.5)
-    return buf.getvalue()
+def chart_to_png(chart: alt.Chart, width: int = 600, height: int = 300):
+    try:
+        buf = io.BytesIO()
+        chart.save(buf, format="png", scale_factor=1.5)
+        return buf.getvalue()
+    except Exception:
+        return None
 
 
 def build_pdf(summary: dict, aircraft: str, program_start: str, program_end: str,
@@ -574,15 +577,12 @@ with col1:
 
     st.dataframe(build_display_table(summary), use_container_width=True, hide_index=True)
 
-    try:
-        _nre_png = chart_to_png(_nre_chart)
-        _cf_png  = chart_to_png(_cf_chart)
-        _pdf_chart_pngs = [
-            ("MTOW vs Total NRE", _nre_png),
-            ("Cumulative Cash Flow", _cf_png),
-        ]
-    except Exception:
-        _pdf_chart_pngs = None
+    _nre_png = chart_to_png(_nre_chart)
+    _cf_png  = chart_to_png(_cf_chart)
+    _pdf_chart_pngs = [(t, p) for t, p in [
+        ("MTOW vs Total NRE", _nre_png),
+        ("Cumulative Cash Flow", _cf_png),
+    ] if p is not None] or None
     _pdf_bytes = build_pdf(
         summary,
         aircraft=selected_aircraft,
