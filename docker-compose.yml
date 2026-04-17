@@ -1,0 +1,13 @@
+services:
+  aircraft-revenue:
+    build: .
+    container_name: aircraft-revenue
+    restart: unless-stopped
+    ports:
+      - "8513:8501"
+    networks:
+      - caddy-net
+
+networks:
+  caddy-net:
+    external: true
